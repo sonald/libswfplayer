@@ -3,6 +3,19 @@
 
 #include <QtWebKitWidgets>
 
+struct SwfFileInfo {
+    char sig[4];
+    char version;
+    int length;
+    bool compressed;
+
+    int width;
+    int height;
+
+    bool valid;
+    static SwfFileInfo parseSwfFile(const QString& file);
+};
+
 
 class QSwfPlayer: public QWebView {
     public:
@@ -21,6 +34,7 @@ class QSwfPlayer: public QWebView {
 
     private:
         bool _loaded;
+        SwfFileInfo _swfInfo;
 
         QVariant eval(const QString& script);
 

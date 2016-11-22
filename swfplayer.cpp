@@ -44,18 +44,22 @@ const char templ[] = R"(
 </html>
 )";
 
-struct SwfFileInfo {
-    char sig[4];
-    char version;
-    int length;
-    bool compressed;
+static int getInt(const char* buf, int bits, int off)
+{
+    unsigned int val = 0;
+    int pos = off;
 
-    int width;
-    int height;
+    for (int i = 0; i < bits; i++) {
+        val <<=1;
+        int bit = (buf[(off + i)/8] >> (7-pos)) & 1;
+        val |= bit;
+        pos++;
+        if (pos == 8) pos = 0;
+    }
 
-    bool valid;
-    static SwfFileInfo parseSwfFile(const QString& file);
-};
+    if (val&(1<<(bits-1))) val|=(0xffffffff<<bits);  
+    return val;
+}
 
 SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
 {
@@ -78,71 +82,43 @@ SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
     f.read(buf, sizeof buf);
 
     switch (buf[0]) {
+        case 'Z': 
+            break;
+
         case 'F':
-        case 'C':
-        case 'Z': {
+        case 'C': {
             if (buf[1] != 'W' || buf[2] != 'S') {
                 break;
             }
+
             memcpy(sfi.sig, buf, 3);
             sfi.sig[3] = 0;
             sfi.version = buf[3];
             sfi.length = *((int*)(buf+4));
-            sfi.compressed = buf[0] == 'C' || buf[0] == 'Z';
+            sfi.compressed = buf[0] == 'C';
 
             if (sfi.compressed) {
-                //assume zlib decompress
-
                 char out[sizeof buf - 8];
-                z_stream stream;
-                stream.zalloc = Z_NULL;
-                stream.zfree = Z_NULL;
-                stream.opaque = Z_NULL;
-
-                stream.avail_in = 0;
-                stream.next_in = Z_NULL;
-
-                int ret = inflateInit(&stream);
-                if (ret != Z_OK) {
-                    qDebug() << "inflate failed";
-                    return sfi;
-                }
-
-                stream.avail_in = sizeof buf - 8;
-                stream.next_in = (Bytef*)(buf + 8);
-
-                stream.next_out = (Bytef*)out;
-                stream.avail_out = sizeof out;
-                ret = inflate(&stream, Z_SYNC_FLUSH);
-                if (ret != Z_OK)
-                    qDebug() << "inflate error";
+                uLongf outlen = sizeof out;
+                uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof buf - 8);
 
                 memcpy(buf + 8, out, sizeof buf - 8);
-                inflateEnd(&stream);
             }
 
-            int64_t l = *(int64_t*)(buf+8);
-            int nbits = (buf[8] & 0x1f);
+            int nbits = getInt(buf+8, 5, 0);
             int off = 5;
-            int xmin = (l >> off) & ((1<<nbits) - 1);
 
-            l = *(int64_t*)&buf[8 + (5+nbits)/8];
-            off = (5+nbits)%8;
-            int xmax = (l >> off) & ((1<<nbits) - 1);
+            int xmin = getInt(buf+8, nbits, off);
+            int xmax = getInt(buf+8+(5+nbits)/8, nbits, (5+nbits)%8);
+            int ymin = getInt(buf+8+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
+            int ymax = getInt(buf+8+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
+            
 
-            l = *(int64_t*)&buf[8 + (5+nbits*2)/8];
-            off = (5+nbits*2)%8;
-            int ymin = (l >> off) & ((1<<nbits) - 1);
-
-            l = *(int64_t*)&buf[8 + (5+nbits*3)/8];
-            off = (5+nbits*3)%8;
-            int ymax = (l >> off) & ((1<<nbits) - 1);
-
-            sfi.width = xmax - xmin;
-            sfi.height = ymax - ymin;
+            sfi.width = (xmax - xmin)/20;
+            sfi.height = (ymax - ymin)/20;
 
             qDebug() << sfi.sig << sfi.version << sfi.length 
-                << "nbits = " << nbits 
+                << "nbits = " << (int)nbits 
                 << xmin << xmax << ymin << ymax 
                 << "w = " << sfi.width << "h = " << sfi.height;
             sfi.valid = true;
@@ -230,7 +206,10 @@ void QSwfPlayer::loadSwf(QString& filename)
     QFileInfo fi(filename);
     QString file = QString("file://") + fi.canonicalFilePath();
 
-    auto sfi = SwfFileInfo::parseSwfFile(filename);
+    _swfInfo = SwfFileInfo::parseSwfFile(filename);
+    if (_swfInfo.valid) {
+        resize(_swfInfo.width, _swfInfo.height);
+    }
 
     QString buf(templ);
     buf = buf.arg(this->width()).arg(this->height()).arg(file);
