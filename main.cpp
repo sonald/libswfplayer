@@ -24,6 +24,7 @@ int main(int argc, char *argv[])
     w->loadSwf(file);
     w->show();
 
+    //Window which QSwfPlayer window embeds into
     auto* w2 = new QTabWidget;
     w2->setAttribute(Qt::WA_QuitOnClose, true);
 
@@ -39,21 +40,21 @@ int main(int argc, char *argv[])
         pbPlay->setText("Play");
         hbox->addWidget(pbPlay);
         QObject::connect(pbPlay, &QPushButton::pressed, [w]() {
-            w->page()->mainFrame()->evaluateJavaScript("Play()");
+                w->play();
         });
 
         auto *pbStop = new QPushButton(tab1);
         pbStop->setText("Stop");
         hbox->addWidget(pbStop);
         QObject::connect(pbStop, &QPushButton::pressed, [w]() {
-            w->page()->mainFrame()->evaluateJavaScript("Stop()");
+                w->stop();
         });
 
         auto *pbPause = new QPushButton(tab1);
         pbPause->setText("Pause");
         hbox->addWidget(pbPause);
         QObject::connect(pbPause, &QPushButton::pressed, [w]() {
-            w->page()->mainFrame()->evaluateJavaScript("Pause()");
+                w->pause();
         });
 
         auto *pbGrab = new QPushButton(tab1);

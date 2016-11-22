@@ -14,4 +14,4 @@ find_package(PkgConfig)
 
 add_executable(jinshan main.cpp swfplayer.cpp)
 
-target_link_libraries(jinshan Qt5::WebKitWidgets Qt5::X11Extras X11)
+target_link_libraries(jinshan Qt5::WebKitWidgets Qt5::X11Extras X11 z)
