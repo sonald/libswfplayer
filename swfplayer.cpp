@@ -1,14 +1,35 @@
 #include <QtWebKitWidgets>
 #include "swfplayer.h"
 
+#include <vector>
+
 #include <zlib.h>
+#include <libffmpegthumbnailer/videothumbnailer.h>
+
+namespace ff = ffmpegthumbnailer;
+
+struct SwfFileInfo {
+    char sig[4];
+    char version;
+    int length;
+    bool compressed;
+
+    int width;
+    int height;
+
+    bool valid;
+
+    QImage thumb;
+
+    static SwfFileInfo* parseSwfFile(const QString& file);
+};
 
 /**
  * mms.cfg: https://gist.github.com/orumin/6365218
  *
  */
 
-const char templ[] = R"(
+static const char templ[] = R"(
 <html lang="en">
     <head>
         <title>Player</title>
@@ -61,10 +82,49 @@ static int getInt(const char* buf, int bits, int off)
     return val;
 }
 
-SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
+static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
 {
-    SwfFileInfo sfi;
-    sfi.valid = false;
+    int sz = sfi->width;
+    try {
+        ff::VideoThumbnailer videoThumbnailer(sz, false, true, 8, false);
+        videoThumbnailer.setLogCallback([] (ThumbnailerLogLevel lvl, const std::string& msg) {
+                if (lvl == ThumbnailerLogLevelInfo)
+                qDebug() << msg.c_str();
+                else
+                qDebug() << msg.c_str();
+                });
+
+        videoThumbnailer.setSeekPercentage(10);
+
+        QImage img;
+        QTemporaryFile tf;
+        if (tf.open()) {
+            qDebug() << "img " << tf.fileName();
+            videoThumbnailer.generateThumbnail(file.toStdString(), Png, tf.fileName().toStdString());
+
+            img = QImage(tf.fileName());
+        }
+        //img.save("output.png");
+        return img;
+    } catch (std::exception& e) {
+        qDebug() << "Error: " << e.what();
+
+        QImage blank(QSize(sfi->width, sfi->height), QImage::Format_RGB888);
+        QPainter p(&blank);
+        QRect r(QPoint(0, 0), QSize(sfi->width, sfi->height));
+        p.fillRect(r, Qt::gray);
+        p.setPen(Qt::red);
+        p.drawText(r.center(), "SWF");
+        p.end();
+        //blank.save("blank.png");
+        return blank;
+    }
+}
+
+SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
+{
+    SwfFileInfo *sfi = new SwfFileInfo;
+    sfi->valid = false;
 
     QFile f(file);
     if (!f.open(QIODevice::ReadOnly))
@@ -91,13 +151,13 @@ SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
                 break;
             }
 
-            memcpy(sfi.sig, buf, 3);
-            sfi.sig[3] = 0;
-            sfi.version = buf[3];
-            sfi.length = *((int*)(buf+4));
-            sfi.compressed = buf[0] == 'C';
+            memcpy(sfi->sig, buf, 3);
+            sfi->sig[3] = 0;
+            sfi->version = buf[3];
+            sfi->length = *((int*)(buf+4));
+            sfi->compressed = buf[0] == 'C';
 
-            if (sfi.compressed) {
+            if (sfi->compressed) {
                 char out[sizeof buf - 8];
                 uLongf outlen = sizeof out;
                 uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof buf - 8);
@@ -114,14 +174,14 @@ SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
             int ymax = getInt(buf+8+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
             
 
-            sfi.width = (xmax - xmin)/20;
-            sfi.height = (ymax - ymin)/20;
+            sfi->width = (xmax - xmin)/20;
+            sfi->height = (ymax - ymin)/20;
 
-            qDebug() << sfi.sig << sfi.version << sfi.length 
+            qDebug() << sfi->sig << sfi->version << sfi->length 
                 << "nbits = " << (int)nbits 
                 << xmin << xmax << ymin << ymax 
-                << "w = " << sfi.width << "h = " << sfi.height;
-            sfi.valid = true;
+                << "w = " << sfi->width << "h = " << sfi->height;
+            sfi->valid = true;
         }
 
         default:
@@ -129,12 +189,17 @@ SwfFileInfo SwfFileInfo::parseSwfFile(const QString& file)
     }
 
     f.close();
+
+    sfi->thumb = getThumbnailFromSwf(sfi, file);
+
     return sfi;
 }
 
 QSwfPlayer::QSwfPlayer(QWidget* parent)
     : QWebView(parent),
-    _loaded(false)
+    _loaded(false),
+    _state(QSwfPlayer::Invalid),
+    _swfInfo(NULL)
 {
     if (settings()) {
         settings()->setAttribute(QWebSettings::PluginsEnabled, true);
@@ -152,21 +217,29 @@ QVariant QSwfPlayer::eval(const QString& script)
 
 void QSwfPlayer::play()
 {
+    if (_state == QSwfPlayer::Invalid) return;
+    _state = QSwfPlayer::Playing;
     eval("Play()");
 }
 
 void QSwfPlayer::stop()
 {
+    if (_state == QSwfPlayer::Invalid) return;
+    _state = QSwfPlayer::Loaded;
     eval("Stop()");
 }
 
 void QSwfPlayer::pause()
 {
+    if (_state == QSwfPlayer::Invalid) return;
+    _state = QSwfPlayer::Paused;
     eval("Pause()");
 }
 
 void QSwfPlayer::grab(QString filepath)
 {
+    if (_state == QSwfPlayer::Invalid) return;
+
     QPixmap pixmap(this->size());
     this->render(&pixmap);
 
@@ -180,9 +253,27 @@ void QSwfPlayer::resizeEvent(QResizeEvent *event)
     return QWebView::resizeEvent(event);
 }
 
+QImage QSwfPlayer::thumbnail() const
+{
+    if (_state != QSwfPlayer::Invalid) {
+        return _swfInfo->thumb;
+    }
+
+    QImage blank(_preferedSize, QImage::Format_RGB888);
+    QPainter p(&blank);
+    QRect r(QPoint(0, 0), _preferedSize);
+    p.fillRect(r, Qt::gray);
+    p.setPen(Qt::red);
+    p.drawText(r.center(), "SWF");
+    p.end();
+
+    return blank;
+}
+
 void QSwfPlayer::onLoadFinished(bool ok)
 {
     _loaded = true;
+    _state = QSwfPlayer::Loaded;
     qDebug() << __func__;
 
     QObject::disconnect(this, &QWebView::loadFinished, this, &QSwfPlayer::onLoadFinished);
@@ -195,6 +286,7 @@ void QSwfPlayer::onLoadFinished(bool ok)
     //frm->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
     
     eval("adjustSize()");
+    grab("");
 }
 
 void QSwfPlayer::loadSwf(QString& filename)
@@ -207,8 +299,9 @@ void QSwfPlayer::loadSwf(QString& filename)
     QString file = QString("file://") + fi.canonicalFilePath();
 
     _swfInfo = SwfFileInfo::parseSwfFile(filename);
-    if (_swfInfo.valid) {
-        resize(_swfInfo.width, _swfInfo.height);
+    if (_swfInfo->valid) {
+        _preferedSize = QSize(_swfInfo->width, _swfInfo->height);
+        resize(_swfInfo->width, _swfInfo->height);
     }
 
     QString buf(templ);

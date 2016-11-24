@@ -11,7 +11,10 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt5WebKitWidgets)
 find_package(Qt5X11Extras)
 find_package(PkgConfig)
+pkg_check_modules(DEPS REQUIRED libffmpegthumbnailer)
 
+add_definitions(${DEPS_CFLAGS})
 add_executable(jinshan main.cpp swfplayer.cpp)
 
-target_link_libraries(jinshan Qt5::WebKitWidgets Qt5::X11Extras X11 z)
+target_link_libraries(jinshan Qt5::WebKitWidgets Qt5::X11Extras
+    X11 z ffmpegthumbnailer)
