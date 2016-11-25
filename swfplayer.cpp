@@ -82,9 +82,41 @@ static int getInt(const char* buf, int bits, int off)
     return val;
 }
 
+static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
+{
+    if (!QFile::exists("/usr/bin/dump-gnash")) {
+        return QImage();
+    }
+
+    QString tmpl("dump-gnash --screenshot last --screenshot-file %1 \"%2\""
+            " --max-advances=20 --timeout=100 --width=%3 --height=%4 -r1");
+    QImage img;
+
+    char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
+    char *output = mktemp(file_tmpl);
+    qDebug() << "getThumbnailByGnash " << output;
+    QString cmdline = tmpl.arg(output).arg(file).arg(sfi->width).arg(sfi->height);
+    qDebug() << cmdline;
+
+    QProcess gnash;
+    gnash.start(cmdline);
+    if (!gnash.waitForStarted()) 
+        return img;
+
+    if (!gnash.waitForFinished())
+        return img;
+
+    img = QImage(output);
+    //img.save("output.png");
+
+    unlink(output);
+    return img;
+}
+
 static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
 {
     int sz = sfi->width;
+
     try {
         ff::VideoThumbnailer videoThumbnailer(sz, false, true, 8, false);
         videoThumbnailer.setLogCallback([] (ThumbnailerLogLevel lvl, const std::string& msg) {
@@ -109,6 +141,13 @@ static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
     } catch (std::exception& e) {
         qDebug() << "Error: " << e.what();
 
+        {
+            QImage img = getThumbnailByGnash(sfi, file);
+            if (!img.isNull()) {
+                return img;
+            }
+        }
+
         QImage blank(QSize(sfi->width, sfi->height), QImage::Format_RGB888);
         QPainter p(&blank);
         QRect r(QPoint(0, 0), QSize(sfi->width, sfi->height));
@@ -116,7 +155,6 @@ static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
         p.setPen(Qt::red);
         p.drawText(r.center(), "SWF");
         p.end();
-        //blank.save("blank.png");
         return blank;
     }
 }

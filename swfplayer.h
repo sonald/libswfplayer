@@ -23,7 +23,9 @@ class QSwfPlayer: public QWebView {
         // grab a snapshot of current content
         void grab(QString filepath);
 
-        // preview of swf if it contains video info, else return a blank image with size of swf 
+        // preview of swf if it contains video info, 
+        // else extract a frame from flash by gnash, if that fails,
+        // return a blank image with size of swf 
         QImage thumbnail() const;
         // size of swf if it's loaded.
         QSize preferedSize() const { return _preferedSize; }
