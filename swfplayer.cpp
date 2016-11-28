@@ -17,6 +17,9 @@ struct SwfFileInfo {
     int width;
     int height;
 
+    int frameRate;
+    int frameCount;
+
     bool valid;
 
     QImage thumb;
@@ -78,7 +81,7 @@ static int getInt(const char* buf, int bits, int off)
         if (pos == 8) pos = 0;
     }
 
-    if (val&(1<<(bits-1))) val|=(0xffffffff<<bits);  
+    //if (val&(1<<(bits-1))) val|=(0xffffffff<<bits);  
     return val;
 }
 
@@ -211,6 +214,9 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
             int ymin = getInt(buf+8+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
             int ymax = getInt(buf+8+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
             
+            char *bufnext = buf + 8 + (5+nbits*3)/8 + 1;
+            sfi->frameRate = (int)*bufnext;
+            //sfi->frameCount = (int)*((short*)bufnext+1);
 
             sfi->width = (xmax - xmin)/20;
             sfi->height = (ymax - ymin)/20;
@@ -218,7 +224,8 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
             qDebug() << sfi->sig << sfi->version << sfi->length 
                 << "nbits = " << (int)nbits 
                 << xmin << xmax << ymin << ymax 
-                << "w = " << sfi->width << "h = " << sfi->height;
+                << "w = " << sfi->width << "h = " << sfi->height
+                << "rate = " << sfi->frameRate << "count = " << sfi->frameCount;
             sfi->valid = true;
         }
 
@@ -311,8 +318,6 @@ QImage QSwfPlayer::thumbnail() const
 void QSwfPlayer::onLoadFinished(bool ok)
 {
     _loaded = true;
-    _state = QSwfPlayer::Loaded;
-    qDebug() << __func__;
 
     QObject::disconnect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
 
@@ -324,7 +329,7 @@ void QSwfPlayer::onLoadFinished(bool ok)
     //frm->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
     
     eval("adjustSize()");
-    //grab("");
+    qDebug() << __func__;
 }
 
 void QSwfPlayer::loadSwf(QString& filename)
@@ -338,6 +343,7 @@ void QSwfPlayer::loadSwf(QString& filename)
 
     _swfInfo = SwfFileInfo::parseSwfFile(filename);
     if (_swfInfo->valid) {
+        _state = QSwfPlayer::Loaded;
         _preferedSize = QSize(_swfInfo->width, _swfInfo->height);
         resize(_swfInfo->width, _swfInfo->height);
     }
@@ -347,5 +353,9 @@ void QSwfPlayer::loadSwf(QString& filename)
 
     QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
     setHtml(buf);
+
+    while (qApp->hasPendingEvents() && !_loaded) {
+        qApp->processEvents();
+    }
 }
 

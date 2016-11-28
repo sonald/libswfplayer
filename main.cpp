@@ -46,6 +46,7 @@ class MainWindow: public QTabWidget {
 
             auto *layout = new QVBoxLayout(tab2);
             _lb = new QLabel;
+            _lb->setPixmap(QPixmap::fromImage(w->thumbnail()));
             layout->addWidget(_lb);
             layout->addWidget(pb);
             tab2->setLayout(layout);
@@ -59,7 +60,6 @@ class MainWindow: public QTabWidget {
                 if (index == 0) {
                     w->show();
                 } else {
-                    _lb->setPixmap(QPixmap::fromImage(w->thumbnail()));
                     w->hide();
                 }
             }

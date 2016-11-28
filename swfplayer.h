@@ -23,7 +23,7 @@ class QSwfPlayer: public QWebView {
         void play();
         void stop();
         void pause();
-        // grab a snapshot of current content
+        // grab a snapshot of current content when playing
         void grab(QString filepath);
 
         // preview of swf if it contains video info, 
