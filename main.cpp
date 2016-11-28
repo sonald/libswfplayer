@@ -64,6 +64,12 @@ class MainWindow: public QTabWidget {
                 }
             }
 
+    protected:
+        void closeEvent(QCloseEvent *ce) {
+            ce->accept();
+            qApp->quit();
+        }
+
     private:
         QLabel *_lb;
 };
