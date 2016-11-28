@@ -1,9 +1,73 @@
 #include <QX11Info>
 #include <QString>
+#include <QtGui>
 
 #include "swfplayer.h"
 
 #include <X11/Xlib.h>
+
+static QSwfPlayer *w;
+
+class MainWindow: public QTabWidget {
+    Q_OBJECT
+    public:
+        MainWindow(): QTabWidget(0) {
+            auto *tab1 = new QWidget;
+            {
+                auto *layout = new QVBoxLayout(tab1);
+                layout->addStretch();
+
+                auto *hbox = new QHBoxLayout;
+                layout->addLayout(hbox);
+
+                auto *pbPlay = new QPushButton(tab1);
+                pbPlay->setText("Play");
+                hbox->addWidget(pbPlay);
+                QObject::connect(pbPlay, SIGNAL(pressed()), w, SLOT(play()));
+
+                auto *pbStop = new QPushButton(tab1);
+                pbStop->setText("Stop");
+                hbox->addWidget(pbStop);
+                QObject::connect(pbStop, SIGNAL(pressed()), w, SLOT(stop()));
+
+                auto *pbPause = new QPushButton(tab1);
+                pbPause->setText("Pause");
+                hbox->addWidget(pbPause);
+                QObject::connect(pbPause, SIGNAL(pressed()), w, SLOT(pause()));
+
+                tab1->setLayout(layout);
+            }
+
+            this->addTab(tab1, "Page1");
+
+            auto *tab2 = new QWidget;
+            auto *pb = new QPushButton(tab2);
+            pb->setText("quit");
+
+            auto *layout = new QVBoxLayout(tab2);
+            _lb = new QLabel;
+            layout->addWidget(_lb);
+            layout->addWidget(pb);
+            tab2->setLayout(layout);
+
+            this->addTab(tab2, "Page2");
+        }
+
+        public slots:
+            void OnCurrenChanged(int index) {
+                qDebug() << "currentChanged: " << index;
+                if (index == 0) {
+                    w->show();
+                } else {
+                    _lb->setPixmap(QPixmap::fromImage(w->thumbnail()));
+                    w->hide();
+                }
+            }
+
+    private:
+        QLabel *_lb;
+};
+
 static int width = 700, height = 500;
 //default testing file
 const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragandpop.swf";
@@ -12,8 +76,8 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    auto *w = new QSwfPlayer;
-    w->setWindowFlags(Qt::BypassWindowManagerHint|Qt::CustomizeWindowHint);
+    w = new QSwfPlayer;
+    w->setWindowFlags(Qt::X11BypassWindowManagerHint|Qt::CustomizeWindowHint);
 
     w->resize(width, height);
     w->setAttribute(Qt::WA_QuitOnClose, true);
@@ -25,69 +89,11 @@ int main(int argc, char *argv[])
     w->show();
 
     //Window which QSwfPlayer window embeds into
-    auto* w2 = new QTabWidget;
+    MainWindow* w2 = new MainWindow;
     w2->setAttribute(Qt::WA_QuitOnClose, true);
+    QObject::connect(w2, SIGNAL(currentChanged(int)), w2, SLOT(OnCurrenChanged(int)));
 
-    auto *tab1 = new QWidget;
-    {
-        auto *layout = new QVBoxLayout(tab1);
-        layout->addStretch();
-
-        auto *hbox = new QHBoxLayout;
-        layout->addLayout(hbox);
-
-        auto *pbPlay = new QPushButton(tab1);
-        pbPlay->setText("Play");
-        hbox->addWidget(pbPlay);
-        QObject::connect(pbPlay, &QPushButton::pressed, [w]() {
-                w->play();
-        });
-
-        auto *pbStop = new QPushButton(tab1);
-        pbStop->setText("Stop");
-        hbox->addWidget(pbStop);
-        QObject::connect(pbStop, &QPushButton::pressed, [w]() {
-                w->stop();
-        });
-
-        auto *pbPause = new QPushButton(tab1);
-        pbPause->setText("Pause");
-        hbox->addWidget(pbPause);
-        QObject::connect(pbPause, &QPushButton::pressed, [w]() {
-                w->pause();
-        });
-
-        auto *pbGrab = new QPushButton(tab1);
-        pbGrab->setText("Grab");
-        hbox->addWidget(pbGrab);
-        QObject::connect(pbGrab, &QPushButton::pressed, [w]() {
-            w->grab("snapshot.png");
-        });
-
-        tab1->setLayout(layout);
-    }
-
-    w2->addTab(tab1, "Page1");
-
-    auto *tab2 = new QWidget;
-    auto *pb = new QPushButton(tab2);
-    pb->setText("quit");
-
-    auto *layout = new QVBoxLayout(tab2);
-    //layout->addStretch();
-    layout->addWidget(pb);
-    tab2->setLayout(layout);
-
-    w2->addTab(tab2, "Page2");
-
-    QObject::connect(w2, &QTabWidget::currentChanged, [=](int index) {
-        qDebug() << "currentChanged: " << index;
-        if (index == 0) {
-            w->show();
-        } else {
-            w->hide();
-        }
-    });
+    width = w->preferedSize().width(), height = w->preferedSize().height();
     w2->resize(width + 80, height + 100);
     w2->show();
 
@@ -95,3 +101,5 @@ int main(int argc, char *argv[])
     app.exec();
     return 0;
 }
+
+#include "main.moc"

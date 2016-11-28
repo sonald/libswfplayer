@@ -1,5 +1,5 @@
 ## 编译依赖
-sudo apt install libffmpegthumbnailer-dev zlib1g-dev gnash
+sudo apt install libffmpegthumbnailer-dev zlib1g-dev gnash libqtwebkit-dev
 
 ## 编译
 mkdir build && cd build && cmake . && make -j2

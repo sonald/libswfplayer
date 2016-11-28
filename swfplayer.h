@@ -1,11 +1,14 @@
 #ifndef _SWF_PLAYER_H
 #define _SWF_PLAYER_H 
 
-#include <QtWebKitWidgets>
+#include <QtCore>
+#include <QImage>
+#include <QWebView>
 
 struct SwfFileInfo;
 
 class QSwfPlayer: public QWebView {
+    Q_OBJECT
     public:
         enum State {
             Invalid, // no swf loaded

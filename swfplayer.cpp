@@ -1,4 +1,4 @@
-#include <QtWebKitWidgets>
+#include <QtWebKit>
 #include "swfplayer.h"
 
 #include <vector>
@@ -314,7 +314,7 @@ void QSwfPlayer::onLoadFinished(bool ok)
     _state = QSwfPlayer::Loaded;
     qDebug() << __func__;
 
-    QObject::disconnect(this, &QWebView::loadFinished, this, &QSwfPlayer::onLoadFinished);
+    QObject::disconnect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
 
     page()->settings()->setAttribute(QWebSettings::PluginsEnabled, true);
     page()->settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
@@ -324,7 +324,7 @@ void QSwfPlayer::onLoadFinished(bool ok)
     //frm->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
     
     eval("adjustSize()");
-    grab("");
+    //grab("");
 }
 
 void QSwfPlayer::loadSwf(QString& filename)
@@ -345,7 +345,7 @@ void QSwfPlayer::loadSwf(QString& filename)
     QString buf(templ);
     buf = buf.arg(this->width()).arg(this->height()).arg(file);
 
-    QObject::connect(this, &QWebView::loadFinished, this, &QSwfPlayer::onLoadFinished);
+    QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
     setHtml(buf);
 }
 
