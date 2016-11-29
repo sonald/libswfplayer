@@ -2,15 +2,36 @@
 #include "swfplayer.h"
 
 #include <vector>
+#include <map>
+#include <set>
 
 #include <zlib.h>
 #include <libffmpegthumbnailer/videothumbnailer.h>
 
 namespace ff = ffmpegthumbnailer;
 
+static std::map<int, std::string> tag_videos = {
+    {60, "VideoStream"},
+    {61, "VideoFrame"},
+};
+
+static std::map<int, std::string> tag_images = {
+    {6, "DefineBits"},
+    {21, "DefineBitsJPEG2"},
+    {35, "DefineBitsJPEG3"},
+    {90, "DefineBitsJPEG4"},
+    {20, "DefineBitsLossless"},
+    {36, "DefineBitsLossless2"},
+};
+
+typedef struct SwfTag {
+    unsigned type;
+    unsigned int len;
+} SwfTag;
+
 struct SwfFileInfo {
     char sig[4];
-    char version;
+    int version;
     int length;
     bool compressed;
 
@@ -23,6 +44,12 @@ struct SwfFileInfo {
     bool valid;
 
     QImage thumb;
+
+    QVector<SwfTag> tags;
+                    
+    // guessed from tags
+    bool containsVideo;
+    bool containsImage;
 
     static SwfFileInfo* parseSwfFile(const QString& file);
 };
@@ -74,7 +101,7 @@ aa+="SWFObjectNew";ab.setAttribute("id",aa);ah.parentNode.insertBefore(ab,ah);ah
 if(ac){if(/\?/.test(ac)){ac=ac.split("?")[1]}if(ad==null){return N(ac)}var ab=ac.split("&");for(var aa=0;aa<ab.length;aa++){if(ab[aa].substring(0,ab[aa].indexOf("="))==ad){return N(ab[aa].substring((ab[aa].indexOf("=")+1)))}}}return""},expressInstallCallback:function(){if(a){var aa=c(S);if(aa&&I){aa.parentNode.replaceChild(I,aa);if(p){w(p,true);if(O.ie){I.style.display="block"}}if(E){E(B)}}a=false}},version:"2.3"}}();
 )";
 
-static int getInt(const char* buf, int bits, int off)
+static int getInt(const unsigned char* buf, int bits, int off)
 {
     unsigned int val = 0;
     int pos = off;
@@ -91,6 +118,22 @@ static int getInt(const char* buf, int bits, int off)
     return val;
 }
 
+static unsigned short getUI16(const unsigned char *buf)
+{
+    unsigned short v = *buf++;
+    v |= *buf << 8;
+    return v;
+}
+
+static unsigned int getUI32(const unsigned char *buf)
+{
+    unsigned int v = *buf++;
+    v |= (*buf++ << 8);
+    v |= (*buf++ << 16);
+    v |= (*buf << 24);
+    return v;
+}
+
 static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
 {
     if (!QFile::exists("/usr/bin/dump-gnash")) {
@@ -98,7 +141,7 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     }
 
     QString tmpl("dump-gnash --screenshot last --screenshot-file %1 \"%2\""
-            " --max-advances=20 --timeout=100 --width=%3 --height=%4 -r1");
+            " --max-advances=20 --timeout=10 --width=%3 --height=%4 -r1");
     QImage img;
 
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
@@ -112,7 +155,7 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     if (!gnash.waitForStarted()) 
         return img;
 
-    if (!gnash.waitForFinished())
+    if (!gnash.waitForFinished(5000))
         return img;
 
     img = QImage(output);
@@ -126,8 +169,7 @@ static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
 {
     int sz = sfi->width;
 
-    // heuristic way: if frame == 1, it's almost likely not a movie
-    if (sfi->frameCount < 2) {
+    if (!(sfi->containsImage || sfi->containsVideo)) {
         QImage img = getThumbnailByGnash(sfi, file);
         if (!img.isNull()) {
             return img;
@@ -174,6 +216,33 @@ static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
         return blank;
     }
 }
+            
+static void parseTags(SwfFileInfo& sfi, const unsigned char *buf, const unsigned char* end)
+{
+    int count = 0;
+
+    static std::set<int> forces = {
+        21
+    };
+
+    if (end - buf > sfi.length) {
+        end = buf + sfi.length + 32;
+    }
+    while (end - buf > 0 && count++ < 100) {
+        unsigned short tagAndLen = getUI16(buf);
+        buf += 2;
+        unsigned  id = tagAndLen >> 6;
+        unsigned int len = tagAndLen & 0x3f;
+        if (len == 63 || forces.find(id) != forces.end()) {
+            len = getUI32(buf);
+            buf += 4;
+        }
+
+        sfi.tags.push_back((SwfTag){id, len});
+        //qDebug() << "Tag: type " << id << "len " << len;
+        buf += len; // bypass data
+    }
+}
 
 SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
 {
@@ -188,12 +257,14 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
      * uint32_t signature: 24;     // (F|C|Z)WS
      * uint32_t version: 8;
      * uint32_t length; // file length
+     * below maybe compressed
      * RECT frameSize; // Frame size in twips
      * uint16_t frameRate;
      * uint16_t frameCount;
      */
-    char buf[1024];
-    f.read(buf, sizeof buf);
+    int bufsz = 1048576;
+    unsigned char buf[bufsz];
+    f.read((char*)buf, sizeof buf);
 
     switch (buf[0]) {
         case 'Z': 
@@ -212,24 +283,27 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
             sfi->compressed = buf[0] == 'C';
 
             if (sfi->compressed) {
-                char out[sizeof buf - 8];
+                unsigned char out[sizeof buf - 8];
                 uLongf outlen = sizeof out;
                 uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof buf - 8);
 
                 memcpy(buf + 8, out, sizeof buf - 8);
             }
 
-            int nbits = getInt(buf+8, 5, 0);
+            unsigned char *bufnext = buf + 8;
+
+            int nbits = getInt(bufnext, 5, 0);
             int off = 5;
 
-            int xmin = getInt(buf+8, nbits, off);
-            int xmax = getInt(buf+8+(5+nbits)/8, nbits, (5+nbits)%8);
-            int ymin = getInt(buf+8+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
-            int ymax = getInt(buf+8+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
+            int xmin = getInt(bufnext, nbits, off);
+            int xmax = getInt(bufnext+(5+nbits)/8, nbits, (5+nbits)%8);
+            int ymin = getInt(bufnext+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
+            int ymax = getInt(bufnext+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
             
-            char *bufnext = buf + 8 + (5+nbits*3)/8 + 4;
-            sfi->frameRate = (int)*bufnext;
-            sfi->frameCount = (int)*(short*)(bufnext+1);
+            bufnext += (5+nbits*3)/8 + 3;
+            sfi->frameRate = getUI16(bufnext);
+            sfi->frameRate >>= 8;
+            sfi->frameCount = getUI16(bufnext+2);
 
             sfi->width = (xmax - xmin)/20;
             sfi->height = (ymax - ymin)/20;
@@ -239,6 +313,30 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
                 << xmin << xmax << ymin << ymax 
                 << "w = " << sfi->width << "h = " << sfi->height
                 << "rate = " << sfi->frameRate << "count = " << sfi->frameCount;
+
+            parseTags(*sfi, bufnext+4, buf+bufsz);
+
+            sfi->containsVideo = false;
+            sfi->containsImage = false;
+
+            Q_FOREACH(const SwfTag& t, sfi->tags) {
+                qDebug() << "check tag " << t.type;
+                if (tag_videos.find(t.type) != tag_videos.end()) {
+                    sfi->containsVideo = true;
+                }
+
+                if (tag_images.find(t.type) != tag_images.end()) {
+                    sfi->containsImage = true;
+                }
+            }
+
+            if (sfi->containsVideo) {
+                qDebug() << "contains video stream";
+            }
+
+            if (sfi->containsImage) {
+                qDebug() << "contains image";
+            }
             sfi->valid = true;
         }
 
