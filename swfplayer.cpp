@@ -225,9 +225,6 @@ static void parseTags(SwfFileInfo& sfi, const unsigned char *buf, const unsigned
         21
     };
 
-    if (end - buf > sfi.length) {
-        end = buf + sfi.length + 32;
-    }
     while (end - buf > 0 && count++ < 100) {
         unsigned short tagAndLen = getUI16(buf);
         buf += 2;
@@ -304,6 +301,7 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
             sfi->frameRate = getUI16(bufnext);
             sfi->frameRate >>= 8;
             sfi->frameCount = getUI16(bufnext+2);
+            bufnext += 4;
 
             sfi->width = (xmax - xmin)/20;
             sfi->height = (ymax - ymin)/20;
@@ -314,13 +312,18 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
                 << "w = " << sfi->width << "h = " << sfi->height
                 << "rate = " << sfi->frameRate << "count = " << sfi->frameCount;
 
-            parseTags(*sfi, bufnext+4, buf+bufsz);
+            const unsigned char *end = buf + bufsz;
+            size_t offset = bufnext - buf;
+            if (end - bufnext > sfi->length) {
+                end = bufnext + sfi->length - offset;
+            }
+            parseTags(*sfi, bufnext, end);
 
             sfi->containsVideo = false;
             sfi->containsImage = false;
 
             Q_FOREACH(const SwfTag& t, sfi->tags) {
-                qDebug() << "check tag " << t.type;
+                //qDebug() << "check tag " << t.type;
                 if (tag_videos.find(t.type) != tag_videos.end()) {
                     sfi->containsVideo = true;
                 }
