@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 2.8.11)
 
 project(jinshan)
 
+set(CMAKE_CXX_COMPILER "clang++")
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 add_definitions(-std=c++11)
 

@@ -30,6 +30,8 @@ typedef struct SwfTag {
 } SwfTag;
 
 struct SwfFileInfo {
+    QString filename;
+
     char sig[4];
     int version;
     int length;
@@ -66,10 +68,22 @@ static const char templ[] = R"(
         <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
         <script type="text/javascript" src="%4"></script>
         <style>
+            html, body {
+               height: 100%;
+               width: 100%;
+               margin: 0;
+               padding: 0;
+            }
+
+            #player {
+                margin: 0;
+                position: absolute;
+            }
+
             body {
                 background-color: lightblue;
-                margin: 0;
             }
+
         </style>
     </head>
     <body>
@@ -77,19 +91,30 @@ static const char templ[] = R"(
             <h1>Alternative content</h1>
         </div>
         <script type="text/javascript">
-            function Play(){
-                document.getElementById('player').Play();
-            }
+          function Play(){
+              document.getElementById('player').Play();
+          }
 
-            function Pause(){
-                document.getElementById('player').StopPlay();
-            }
+          function Pause(){
+              document.getElementById('player').StopPlay();
+          }
 
-            function Stop(){
-                document.getElementById('player').GotoFrame(1);
-            }
+          function Stop(){
+              //document.getElementById('player').GotoFrame(1);
+              document.getElementById('player').Rewind();
+          }
 
-            swfobject.embedSWF("%3", "player", "%1", "%2", "9.0.0");
+          function adjustSize() {
+              var $obj = document.getElementById('player');
+              // $obj.width = document.documentElement.clientWidth;
+              // $obj.height = document.documentElement.clientHeight;
+              $obj.style.position = "absolute";
+              $obj.style.left = (document.documentElement.clientWidth - $obj.width)/2;
+              $obj.style.top = (document.documentElement.clientHeight - $obj.height)/2;
+          }
+          window.addEventListener('resize', adjustSize);
+
+          swfobject.embedSWF("%3", "player", "%1", "%2", "9.0.0");
         </script>
     </body>
 </html>
@@ -245,6 +270,7 @@ SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
 {
     SwfFileInfo *sfi = new SwfFileInfo;
     sfi->valid = false;
+    sfi->filename = file;
 
     QFile f(file);
     if (!f.open(QIODevice::ReadOnly))
@@ -363,6 +389,7 @@ QSwfPlayer::QSwfPlayer(QWidget* parent)
     if (settings()) {
         settings()->setAttribute(QWebSettings::PluginsEnabled, true);
         settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
+        settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
     }
 }
 
@@ -431,8 +458,6 @@ QImage QSwfPlayer::thumbnail() const
 
 void QSwfPlayer::onLoadFinished(bool ok)
 {
-    _loaded = true;
-
     QObject::disconnect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
 
     page()->settings()->setAttribute(QWebSettings::PluginsEnabled, true);
@@ -444,15 +469,19 @@ void QSwfPlayer::onLoadFinished(bool ok)
         frm->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
     }
     
+    _loaded = true;
     eval("adjustSize()");
-    qDebug() << __func__;
+    //qDebug() << __func__;
 }
 
 void QSwfPlayer::loadSwf(QString& filename)
 {
     if (_loaded) {
-        return;
+        setHtml("");
     }
+    //reset states
+    _loaded = false;
+    _state = QSwfPlayer::Invalid;
 
     QFileInfo fi(filename);
     QString file = QString("file://") + fi.canonicalFilePath();
@@ -461,31 +490,49 @@ void QSwfPlayer::loadSwf(QString& filename)
     if (_swfInfo->valid) {
         _state = QSwfPlayer::Loaded;
         _preferedSize = QSize(_swfInfo->width, _swfInfo->height);
-        resize(_swfInfo->width, _swfInfo->height);
-    }
-
-    QString jspath = "swfobject.js";
-    QFileInfo jsinfo(jspath);
-    jspath = QString("file://") + jsinfo.canonicalFilePath();
-
-    if (!jsinfo.exists()) {
-        _jstf.setAutoRemove(true);
-        if (_jstf.open()) {
-            _jstf.write(swfobject, strlen(swfobject));
-            _jstf.close();
-            jspath = QString("file://") + _jstf.fileName();
-            qDebug() << "create temp js file " << jspath;
-        }
-    }
-
-    QString buf(templ);
-    buf = buf.arg(this->width()).arg(this->height()).arg(file).arg(jspath);
-
-    QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
-    setHtml(buf);
-
-    while (qApp->hasPendingEvents() && !_loaded) {
-        qApp->processEvents();
     }
 }
 
+void QSwfPlayer::showEvent(QShowEvent *event)
+{
+    qDebug() << __func__;
+    if (!_loaded && _state == QSwfPlayer::Loaded) {
+        QFileInfo fi(_swfInfo->filename);
+        QString file = QString("file://") + fi.canonicalFilePath();
+
+        QString jspath = "swfobject.js";
+        QFileInfo jsinfo(jspath);
+        jspath = QString("file://") + jsinfo.canonicalFilePath();
+
+        if (!jsinfo.exists()) {
+            _jstf.setAutoRemove(true);
+            if (_jstf.open()) {
+                _jstf.write(swfobject, strlen(swfobject));
+                _jstf.close();
+                jspath = QString("file://") + _jstf.fileName();
+                qDebug() << "create temp js file " << jspath;
+            }
+        }
+
+        QString buf(templ);
+        buf = buf.arg(preferedSize().width()).arg(preferedSize().height()).arg(file).arg(jspath);
+
+        QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
+        setHtml(buf);
+    }
+}
+
+void QSwfPlayer::hideEvent(QHideEvent *event)
+{
+    qDebug() << __func__;
+    QWidget::hideEvent(event);
+}
+
+void QSwfPlayer::closeEvent(QCloseEvent *event)
+{
+    if (_loaded) {
+        this->settings()->clearMemoryCaches();
+        setHtml("");
+    }
+    QWidget::closeEvent(event);
+}

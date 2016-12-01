@@ -6,7 +6,12 @@
 
 #include <X11/Xlib.h>
 
+static int width = 700, height = 500;
+//default testing file
+const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragandpop.swf";
+
 static QSwfPlayer *w;
+static QString file;
 
 class MainWindow: public QTabWidget {
     Q_OBJECT
@@ -15,7 +20,11 @@ class MainWindow: public QTabWidget {
             auto *tab1 = new QWidget;
             {
                 auto *layout = new QVBoxLayout(tab1);
-                layout->addStretch();
+                //layout->addStretch();
+
+                w = new QSwfPlayer();
+                w->loadSwf(file);
+                layout->addWidget(w);
 
                 auto *hbox = new QHBoxLayout;
                 layout->addLayout(hbox);
@@ -60,6 +69,8 @@ class MainWindow: public QTabWidget {
                 if (index == 0) {
                     w->show();
                 } else {
+                    //if (w->state() == QSwfPlayer::Loaded)
+                        //_lb->setPixmap(QPixmap::fromImage(w->thumbnail()));
                     w->hide();
                 }
             }
@@ -74,25 +85,14 @@ class MainWindow: public QTabWidget {
         QLabel *_lb;
 };
 
-static int width = 700, height = 500;
-//default testing file
-const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragandpop.swf";
-
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    w = new QSwfPlayer;
-    w->setWindowFlags(Qt::X11BypassWindowManagerHint|Qt::CustomizeWindowHint);
-
-    w->resize(width, height);
-    w->setAttribute(Qt::WA_QuitOnClose, true);
-    QString file = QString::fromUtf8(swffile);
+    file = QString::fromUtf8(swffile);
     if (argc == 2) {
         file = (QString::fromUtf8(argv[1]));
     }
-    w->loadSwf(file);
-    w->show();
 
     //Window which QSwfPlayer window embeds into
     MainWindow* w2 = new MainWindow;
@@ -103,7 +103,6 @@ int main(int argc, char *argv[])
     w2->resize(width + 80, height + 100);
     w2->show();
 
-    XReparentWindow(QX11Info::display(), w->winId(), w2->winId(), 20, 40);
     app.exec();
     return 0;
 }
