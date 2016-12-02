@@ -59,6 +59,8 @@ struct SwfFileInfo {
 /**
  * mms.cfg: https://gist.github.com/orumin/6365218
  *
+ * note: wmode: opaque make sure scaling correct (direct/window won't)
+ * <param name="wmode" value="opaque" />
  */
 
 static const char templ[] = R"(
@@ -91,7 +93,8 @@ static const char templ[] = R"(
             <param name="quality" value="high" />
             <param name="loop" value="false" />
             <param name="play" value="false" />
-            <param name="allowFullScreen" value="true" />
+            <param name="menu" value="false" />
+            <param name="allowFullScreen" value="false" />
             <param name="wmode" value="opaque" />
         </object>
 
@@ -122,6 +125,7 @@ static const char templ[] = R"(
 </html>
 )";
 
+// swf parsing helper
 static int getInt(const unsigned char* buf, int bits, int off)
 {
     unsigned int val = 0;
@@ -135,7 +139,6 @@ static int getInt(const unsigned char* buf, int bits, int off)
         if (pos == 8) pos = 0;
     }
 
-    //if (val&(1<<(bits-1))) val|=(0xffffffff<<bits);  
     return val;
 }
 
@@ -166,9 +169,10 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     QImage img;
 
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
-    char *output = mktemp(file_tmpl);
-    qDebug() << "getThumbnailByGnash " << output;
-    QString cmdline = tmpl.arg(output).arg(file).arg(sfi->width).arg(sfi->height);
+    int tmpfd = mkstemp(file_tmpl);
+    close(tmpfd);
+    qDebug() << "getThumbnailByGnash " << file_tmpl;
+    QString cmdline = tmpl.arg(file_tmpl).arg(file).arg(sfi->width).arg(sfi->height);
     qDebug() << cmdline;
 
     QProcess gnash;
@@ -179,10 +183,10 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     if (!gnash.waitForFinished(5000))
         return img;
 
-    img = QImage(output);
+    img = QImage(file_tmpl);
     //img.save("output.png");
 
-    unlink(output);
+    unlink(file_tmpl);
     return img;
 }
 
@@ -380,7 +384,8 @@ QSwfPlayer::QSwfPlayer(QWidget* parent)
     : QWebView(parent),
     _loaded(false),
     _state(QSwfPlayer::Invalid),
-    _swfInfo(NULL)
+    _swfInfo(NULL),
+    _enableDebug(false)
 {
     if (settings()) {
         settings()->setAttribute(QWebSettings::PluginsEnabled, true);
@@ -466,7 +471,7 @@ void QSwfPlayer::onLoadFinished(bool ok)
     }
     
     _loaded = true;
-    //qDebug() << __func__;
+    if (_enableDebug) qDebug() << __func__;
 }
 
 void QSwfPlayer::loadSwf(QString& filename)
@@ -501,12 +506,14 @@ void QSwfPlayer::showEvent(QShowEvent *event)
         QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
         setHtml(buf);
     }
+
+    QWebView::showEvent(event);
 }
 
 void QSwfPlayer::hideEvent(QHideEvent *event)
 {
     qDebug() << __func__;
-    QWidget::hideEvent(event);
+    QWebView::hideEvent(event);
 }
 
 void QSwfPlayer::closeEvent(QCloseEvent *event)
@@ -516,5 +523,24 @@ void QSwfPlayer::closeEvent(QCloseEvent *event)
             this->stop();
         this->settings()->clearMemoryCaches();
     }
-    QWidget::closeEvent(event);
+    QWebView::closeEvent(event);
 }
+
+void QSwfPlayer::enableDebug(bool val)
+{
+    if (_enableDebug == val) {
+        return;
+    }
+
+    _enableDebug = val;
+    settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, _enableDebug);
+}
+
+void QSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
+{
+    qDebug() << __func__;
+    if (_enableDebug) {
+        QWebView::contextMenuEvent(event);
+    }
+}
+

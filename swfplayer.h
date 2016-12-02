@@ -38,17 +38,22 @@ class QSwfPlayer: public QWebView {
         // to get thumbnail, size info
         void loadSwf(QString& filename);
 
+        // turn on menu of inspection for debugging
+        void enableDebug(bool on);
+
     protected:
         void resizeEvent(QResizeEvent *event);
         void showEvent(QShowEvent *event);
         void hideEvent(QHideEvent *event);
         void closeEvent(QCloseEvent *event);
+        void contextMenuEvent(QContextMenuEvent * event);
 
     private:
         bool _loaded;
         SwfFileInfo *_swfInfo;
         QSize _preferedSize;
         State _state;
+        bool _enableDebug;
 
         QVariant eval(const QString& script);
 

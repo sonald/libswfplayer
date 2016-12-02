@@ -44,6 +44,12 @@ class MainWindow: public QTabWidget {
                 hbox->addWidget(pbPause);
                 QObject::connect(pbPause, SIGNAL(pressed()), w, SLOT(pause()));
 
+
+                auto *pbDebug = new QPushButton(tab1);
+                pbDebug->setText("Debug");
+                hbox->addWidget(pbDebug);
+                QObject::connect(pbDebug, SIGNAL(pressed()), this, SLOT(toggleDebug()));
+
                 tab1->setLayout(layout);
             }
 
@@ -64,6 +70,13 @@ class MainWindow: public QTabWidget {
         }
 
         public slots:
+            void toggleDebug() {
+                static bool on = false;
+                
+                on = !on;
+                w->enableDebug(on);
+            }
+
             void OnCurrenChanged(int index) {
                 qDebug() << "currentChanged: " << index;
                 if (index == 0) {
