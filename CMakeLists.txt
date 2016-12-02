@@ -25,14 +25,11 @@ SET (LIB_SRC_LIST
     stringoperations.h
     stringoperations.cpp
     videothumbnailer.cpp
-    videothumbnailerc.cpp
+    filmstripfilter.cpp
+    filmstripfilter.h
     ifilter.h
     videoframe.h
     histogram.h
-    grayscalefilter.h
-    filmstrip.h
-    filmstripfilter.h
-    filmstripfilter.cpp
     pngwriter.h 
     pngwriter.cpp
     jpegwriter.h 
