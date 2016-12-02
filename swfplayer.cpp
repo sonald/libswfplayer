@@ -6,7 +6,8 @@
 #include <set>
 
 #include <zlib.h>
-#include <libffmpegthumbnailer/videothumbnailer.h>
+//#include <libffmpegthumbnailer/videothumbnailer.h>
+#include "videothumbnailer.h"
 
 namespace ff = ffmpegthumbnailer;
 
@@ -216,7 +217,10 @@ static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
         QTemporaryFile tf;
         if (tf.open()) {
             qDebug() << "img " << tf.fileName();
-            videoThumbnailer.generateThumbnail(file.toStdString(), Png, tf.fileName().toStdString());
+            std::string infile = file.toStdString();
+            std::string outfile = tf.fileName().toStdString();
+            videoThumbnailer.generateThumbnail(infile, Png, outfile);
+            //videoThumbnailer.generateThumbnail(file.toStdString(), Png, tf.fileName().toStdString());
 
             img = QImage(tf.fileName());
         }
