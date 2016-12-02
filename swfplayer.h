@@ -49,7 +49,6 @@ class QSwfPlayer: public QWebView {
         SwfFileInfo *_swfInfo;
         QSize _preferedSize;
         State _state;
-        QTemporaryFile _jstf;
 
         QVariant eval(const QString& script);
 
