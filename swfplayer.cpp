@@ -199,20 +199,19 @@ static QImage getThumbnailByGnash(SwfFileInfo* sfi, const QString& file)
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
     int tmpfd = mkstemp(file_tmpl);
     close(tmpfd);
+    QStringList cmd;
+    cmd << "dump-gnash";
+    cmd << "--screenshot"; 
+    cmd << "last"; 
+    cmd << "--screenshot-file";
+    cmd << QString(file_tmpl);
+    cmd << QString("%1").arg(file);
+    cmd << "--max-advances=20"; 
+    cmd << "--timeout=10"; 
+    cmd << QString("--width=%1").arg(sfi->width); 
+    cmd << QString("--height=%1").arg(sfi->height); 
+    cmd << "-r1";
 
-    QStringList cmd = {
-        "dump-gnash",
-        "--screenshot", 
-        "last", 
-        "--screenshot-file",
-        QString(file_tmpl),
-        QString("%1").arg(file),
-        "--max-advances=20", 
-        "--timeout=10", 
-        QString("--width=%1").arg(sfi->width), 
-        QString("--height=%1").arg(sfi->height), 
-        "-r1"
-    };
     qDebug() << cmd.join(" ");
 
     QTime t;
@@ -237,15 +236,15 @@ static QImage getThumbnailByFfmpeg(SwfFileInfo* sfi, const QString& file)
     int tmpfd = mkstemp(file_tmpl);
     close(tmpfd);
 
-    QStringList cmd = {
-        "ffmpegthumbnailer",
-        "-i",
-        QString(file),
-        "-o",
-        QString(file_tmpl),
-        "-s",
-        QString("%1").arg(sfi->width)
-    };
+    QStringList cmd;
+    cmd << "ffmpegthumbnailer";
+    cmd << "-i";
+    cmd << QString(file);
+    cmd << "-o";
+    cmd << QString(file_tmpl);
+    cmd << "-s";
+    cmd << QString("%1").arg(sfi->width);
+
     qDebug() << cmd.join(" ");
 
     QTime t;
