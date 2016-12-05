@@ -10,6 +10,9 @@ struct SwfFileInfo;
 class QSwfPlayer: public QWebView {
     Q_OBJECT
     public:
+        //check requirements for this player to work correctly.
+        static bool checkPreRequirements();
+
         enum State {
             Invalid, // no swf loaded
             Loaded, // swf is loaded, and not playing
@@ -60,6 +63,8 @@ class QSwfPlayer: public QWebView {
     private slots:
         void onLoadFinished(bool ok);
 };
+
+
 
 #endif /* ifndef _SWF_PLAYER_H */
 

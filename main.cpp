@@ -105,6 +105,10 @@ int main(int argc, char *argv[])
         file = (QString::fromUtf8(argv[1]));
     }
 
+    if (!QSwfPlayer::checkPreRequirements()) {
+        return 0;
+    }
+
     //Window which QSwfPlayer window embeds into
     MainWindow* w2 = new MainWindow;
     w2->setAttribute(Qt::WA_QuitOnClose, true);

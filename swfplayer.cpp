@@ -182,7 +182,7 @@ static int execWithTimeout(const QStringList& cmd, int timeout)
     } else {
         char* args[cmd.size()+1];
         for (int i = 0; i < cmd.size(); i++) {
-            args[i] = strdup(cmd[i].toStdString().c_str());
+            args[i] = strdup(cmd[i].toUtf8().constData());
         }
         args[cmd.size()] = NULL;
         execvp(args[0], args);
@@ -204,8 +204,8 @@ static QImage getThumbnailByGnash(SwfFileInfo* sfi, const QString& file)
     cmd << "--screenshot"; 
     cmd << "last"; 
     cmd << "--screenshot-file";
-    cmd << QString(file_tmpl);
-    cmd << QString("%1").arg(file);
+    cmd << QString::fromUtf8(file_tmpl);
+    cmd << file;
     cmd << "--max-advances=20"; 
     cmd << "--timeout=10"; 
     cmd << QString("--width=%1").arg(sfi->width); 
@@ -239,9 +239,9 @@ static QImage getThumbnailByFfmpeg(SwfFileInfo* sfi, const QString& file)
     QStringList cmd;
     cmd << "ffmpegthumbnailer";
     cmd << "-i";
-    cmd << QString(file);
+    cmd << file;
     cmd << "-o";
-    cmd << QString(file_tmpl);
+    cmd << QString::fromUtf8(file_tmpl);
     cmd << "-s";
     cmd << QString("%1").arg(sfi->width);
 
@@ -588,4 +588,92 @@ void QSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
     }
 }
 
+bool QSwfPlayer::checkPreRequirements() 
+{
+    QByteArray chklist[] = {
+        "ffmpegthumbnailer",
+        "dump-gnash"
+    };
+
+    bool res[2] = {
+        false,
+        false
+    };
+
+    QByteArray ba = qgetenv("PATH");
+    if (ba.isEmpty()) {
+        ba = QByteArray("/bin:/usr/bin:/usr/local/bin");
+    }
+
+    QList<QByteArray> paths = ba.split(':');
+    for (int i = 0; i < paths.size(); i++) {
+        for (int j = 0; j < 2; j++) {
+            QString path = QString("%1/%2").arg(paths[i].data()).arg(chklist[j].data());
+            QFileInfo fi(path);
+            if (fi.exists() && fi.isExecutable()) {
+                res[j] = true;
+            }
+        }
+    }
+
+    if (!res[0] || !res[1]) {
+        for (int j = 0; j < 2; j++) {
+            if (!res[j]) qDebug() << QString("%1 is missing").arg(chklist[j].data());
+        }
+        return false;
+    }
+
+    //2. find libflashplugin
+    
+    QString searchPaths[] = {
+        ".mozilla/plugins",
+        ".netscape/plugins",
+        "//System locations",
+        "/usr/lib/browser/plugins",
+        "/usr/local/lib/mozilla/plugins",
+        "/usr/lib/firefox/plugins",
+        "/usr/lib64/browser-plugins",
+        "/usr/lib/browser-plugins",
+        "/usr/lib/mozilla/plugins",
+        "/usr/local/netscape/plugins",
+        "/opt/mozilla/plugins",
+        "/opt/mozilla/lib/plugins",
+        "/opt/netscape/plugins",
+        "/opt/netscape/communicator/plugins",
+        "/usr/lib/netscape/plugins",
+        "/usr/lib/netscape/plugins-libc5",
+        "/usr/lib/netscape/plugins-libc6",
+        "/usr/lib64/netscape/plugins",
+        "/usr/lib64/mozilla/plugins",
+    };
+
+    searchPaths[0] = QString("%1/%2").arg(QDir::homePath()).arg(searchPaths[0]);
+    searchPaths[1] = QString("%1/%2").arg(QDir::homePath()).arg(searchPaths[1]);
+
+    QString nm[] = {
+        "libflashplayer.so",
+    };
+    for (int i = 0; i < 19; i++) {
+        for (int j = 0; j < 1; j++) {
+            QString path = QString("%1/%2").arg(searchPaths[i]).arg(nm[j]);
+            qDebug() << "search " << path;
+            QFileInfo fi(path);
+            if (fi.exists()) {
+                return true;
+            }
+        }
+    }
+
+    qDebug() << QString("%1 is missing").arg(nm[0]);
+    return false;
+
+    //{
+        ////Locations specified by environment variables:
+        //$MOZILLA_HOME/plugins
+        //$MOZ_PLUGIN_PATH
+        //$QTWEBKIT_PLUGIN_PATH
+    //};
+}
+
 #include "swfplayer.moc"
+
