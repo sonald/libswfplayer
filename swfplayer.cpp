@@ -7,6 +7,11 @@
 
 #include <zlib.h>
 
+#include <stdlib.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #define PROC_TIMEOUT 3000
 
 static std::map<int, std::string> tag_videos = {
@@ -28,7 +33,7 @@ typedef struct SwfTag {
     unsigned int len;
 } SwfTag;
 
-struct SwfFileInfo: public QObject {
+class SwfFileInfo: public QObject {
     Q_OBJECT
     public:
         QString filename;
@@ -53,15 +58,8 @@ struct SwfFileInfo: public QObject {
         // guessed from tags
         bool containsVideo;
         bool containsImage;
-        bool thumbGenerated;
 
         static SwfFileInfo* parseSwfFile(const QString& file);
-
-    public slots:
-        void onThumbFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-            thumbGenerated = true;
-        }
-
 };
 
 /**
@@ -166,41 +164,63 @@ static unsigned int getUI32(const unsigned char *buf)
     return v;
 }
 
+static int execWithTimeout(const QStringList& cmd, int timeout)
+{
+    int pid = fork();
+    if (pid < 0) 
+        return -1;
+    else if (pid > 0) {
+        //parent
+        QTime t;
+        t.start();
+        while (t.elapsed() < timeout && waitpid(pid, 0, WNOHANG) >= 0) {
+            usleep(100000);
+        }
+
+        if (!kill(pid, 0)) kill(pid, SIGKILL);
+
+    } else {
+        char* args[cmd.size()+1];
+        for (int i = 0; i < cmd.size(); i++) {
+            args[i] = strdup(cmd[i].toStdString().c_str());
+        }
+        args[cmd.size()] = NULL;
+        execvp(args[0], args);
+    }
+    return 0;
+}
+
 static QImage getThumbnailByGnash(SwfFileInfo* sfi, const QString& file)
 {
     if (!QFile::exists("/usr/bin/dump-gnash")) {
         return QImage();
     }
 
-    QString tmpl("dump-gnash --screenshot last --screenshot-file %1 \"%2\""
-            " --max-advances=20 --timeout=10 --width=%3 --height=%4 -r1");
-    QImage img;
-
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
     int tmpfd = mkstemp(file_tmpl);
     close(tmpfd);
-    QString cmdline = tmpl.arg(file_tmpl).arg(file).arg(sfi->width).arg(sfi->height);
-    qDebug() << cmdline;
 
-    sfi->thumbGenerated = false;
-
-    QProcess gnash;
-    QObject::connect(&gnash, SIGNAL(finished(int, QProcess::ExitStatus)), sfi,
-            SLOT(onThumbFinished(int, QProcess::ExitStatus)));
-    gnash.start(cmdline);
+    QStringList cmd = {
+        "dump-gnash",
+        "--screenshot", 
+        "last", 
+        "--screenshot-file",
+        QString(file_tmpl),
+        QString("%1").arg(file),
+        "--max-advances=20", 
+        "--timeout=10", 
+        QString("--width=%1").arg(sfi->width), 
+        QString("--height=%1").arg(sfi->height), 
+        "-r1"
+    };
+    qDebug() << cmd.join(" ");
 
     QTime t;
     t.start();
-    while (t.elapsed() < PROC_TIMEOUT && !sfi->thumbGenerated) {
-        while (qApp->hasPendingEvents() && !sfi->thumbGenerated)
-            qApp->processEvents();
-    }
+    execWithTimeout(cmd, PROC_TIMEOUT);
     qDebug() << "elapsed: " << t.elapsed();
-    if (!sfi->thumbGenerated) {
-        gnash.kill();
-    }
 
-    img = QImage(file_tmpl);
+    QImage img = QImage(file_tmpl);
     //img.save("output.png");
 
     unlink(file_tmpl);
@@ -213,34 +233,27 @@ static QImage getThumbnailByFfmpeg(SwfFileInfo* sfi, const QString& file)
         return QImage();
     }
 
-    QString tmpl("ffmpegthumbnailer -i %1 -o %2 -s %3");
-    QImage img;
-
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
     int tmpfd = mkstemp(file_tmpl);
     close(tmpfd);
-    QString cmdline = tmpl.arg(file).arg(file_tmpl).arg(sfi->width);
-    qDebug() << cmdline;
 
-    sfi->thumbGenerated = false;
-    QProcess ffmpeg;
-    QObject::connect(&ffmpeg, SIGNAL(finished(int, QProcess::ExitStatus)), sfi,
-            SLOT(onThumbFinished(int, QProcess::ExitStatus)));
-    ffmpeg.start(cmdline);
+    QStringList cmd = {
+        "ffmpegthumbnailer",
+        "-i",
+        QString(file),
+        "-o",
+        QString(file_tmpl),
+        "-s",
+        QString("%1").arg(sfi->width)
+    };
+    qDebug() << cmd.join(" ");
 
     QTime t;
     t.start();
-    while (t.elapsed() < PROC_TIMEOUT && !sfi->thumbGenerated) {
-        while (qApp->hasPendingEvents() && !sfi->thumbGenerated)
-            qApp->processEvents();
-    }
+    execWithTimeout(cmd, PROC_TIMEOUT);
     qDebug() << "elapsed: " << t.elapsed();
 
-    if (!sfi->thumbGenerated) {
-        ffmpeg.kill();
-    }
-
-    img = QImage(file_tmpl);
+    QImage img = QImage(file_tmpl);
     //img.save("output.png");
 
     unlink(file_tmpl);
