@@ -4,8 +4,6 @@
 
 #include "swfplayer.h"
 
-#include <X11/Xlib.h>
-
 static int width = 700, height = 500;
 //default testing file
 const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragandpop.swf";

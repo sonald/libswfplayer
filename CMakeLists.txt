@@ -12,10 +12,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt4 REQUIRED QtGui QtWebKit)
 
 find_package(PkgConfig)
-pkg_check_modules(DEPS REQUIRED libffmpegthumbnailer)
 
-add_definitions(${DEPS_CFLAGS})
 add_executable(jinshan main.cpp swfplayer.cpp)
 
-target_link_libraries(jinshan  Qt4::QtGui Qt4::QtWebKit
-    X11 z ffmpegthumbnailer)
+target_link_libraries(jinshan  Qt4::QtGui Qt4::QtWebKit z)

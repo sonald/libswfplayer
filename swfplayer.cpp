@@ -6,9 +6,6 @@
 #include <set>
 
 #include <zlib.h>
-#include <libffmpegthumbnailer/videothumbnailer.h>
-
-namespace ff = ffmpegthumbnailer;
 
 static std::map<int, std::string> tag_videos = {
     {60, "VideoStream"},
@@ -190,56 +187,61 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     return img;
 }
 
+static QImage getThumbnailByFfmpeg(const SwfFileInfo* sfi, const QString& file)
+{
+    if (!QFile::exists("/usr/bin/ffmpegthumbnailer")) {
+        return QImage();
+    }
+
+    QString tmpl("ffmpegthumbnailer -i %1 -o %2 -s %3");
+    QImage img;
+
+    char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
+    int tmpfd = mkstemp(file_tmpl);
+    close(tmpfd);
+    QString cmdline = tmpl.arg(file).arg(file_tmpl).arg(sfi->width);
+    qDebug() << cmdline;
+
+    QProcess ffmpeg;
+    ffmpeg.start(cmdline);
+    if (!ffmpeg.waitForStarted()) 
+        return img;
+
+    if (!ffmpeg.waitForFinished(5000))
+        return img;
+
+    img = QImage(file_tmpl);
+    //img.save("output.png");
+
+    unlink(file_tmpl);
+    return img;
+}
+
 static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
 {
     int sz = sfi->width;
+    QImage img;
 
-    if (!(sfi->containsImage || sfi->containsVideo)) {
-        QImage img = getThumbnailByGnash(sfi, file);
+    if (sfi->containsImage || sfi->containsVideo) {
+        img = getThumbnailByFfmpeg(sfi, file);
         if (!img.isNull()) {
             return img;
         }
     }
 
-    try {
-        ff::VideoThumbnailer videoThumbnailer(sz, false, true, 8, false);
-        videoThumbnailer.setLogCallback([] (ThumbnailerLogLevel lvl, const std::string& msg) {
-                if (lvl == ThumbnailerLogLevelInfo)
-                qDebug() << msg.c_str();
-                else
-                qDebug() << msg.c_str();
-                });
-
-        videoThumbnailer.setSeekPercentage(5);
-
-        QImage img;
-        QTemporaryFile tf;
-        if (tf.open()) {
-            qDebug() << "img " << tf.fileName();
-            videoThumbnailer.generateThumbnail(file.toStdString(), Png, tf.fileName().toStdString());
-
-            img = QImage(tf.fileName());
-        }
-        //img.save("output.png");
+    img = getThumbnailByGnash(sfi, file);
+    if (!img.isNull()) {
         return img;
-    } catch (std::exception& e) {
-        qDebug() << "Error: " << e.what();
-        {
-            QImage img = getThumbnailByGnash(sfi, file);
-            if (!img.isNull()) {
-                return img;
-            }
-        }
-
-        QImage blank(QSize(sfi->width, sfi->height), QImage::Format_RGB888);
-        QPainter p(&blank);
-        QRect r(QPoint(0, 0), QSize(sfi->width, sfi->height));
-        p.fillRect(r, Qt::gray);
-        p.setPen(Qt::red);
-        p.drawText(r.center(), "SWF");
-        p.end();
-        return blank;
     }
+
+    QImage blank(QSize(sfi->width, sfi->height), QImage::Format_RGB888);
+    QPainter p(&blank);
+    QRect r(QPoint(0, 0), QSize(sfi->width, sfi->height));
+    p.fillRect(r, Qt::gray);
+    p.setPen(Qt::red);
+    p.drawText(r.center(), "SWF");
+    p.end();
+    return blank;
 }
             
 static void parseTags(SwfFileInfo& sfi, const unsigned char *buf, const unsigned char* end)
