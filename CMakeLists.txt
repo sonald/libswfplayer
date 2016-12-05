@@ -15,4 +15,4 @@ find_package(PkgConfig)
 
 add_executable(jinshan main.cpp swfplayer.cpp)
 
-target_link_libraries(jinshan  Qt4::QtGui Qt4::QtWebKit z)
+target_link_libraries(jinshan Qt4::QtGui Qt4::QtWebKit z)

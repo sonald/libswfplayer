@@ -1,4 +1,3 @@
-#include <QX11Info>
 #include <QString>
 #include <QtGui>
 
@@ -28,6 +27,7 @@ class MainWindow: public QTabWidget {
                 layout->addLayout(hbox);
 
                 auto *pbPlay = new QPushButton(tab1);
+                QString txt = QString::fromStdString("Play");
                 pbPlay->setText("Play");
                 hbox->addWidget(pbPlay);
                 QObject::connect(pbPlay, SIGNAL(pressed()), w, SLOT(play()));

@@ -7,6 +7,8 @@
 
 #include <zlib.h>
 
+#define PROC_TIMEOUT 3000
+
 static std::map<int, std::string> tag_videos = {
     {60, "VideoStream"},
     {61, "VideoFrame"},
@@ -26,31 +28,40 @@ typedef struct SwfTag {
     unsigned int len;
 } SwfTag;
 
-struct SwfFileInfo {
-    QString filename;
+struct SwfFileInfo: public QObject {
+    Q_OBJECT
+    public:
+        QString filename;
 
-    char sig[4];
-    int version;
-    int length;
-    bool compressed;
+        char sig[4];
+        int version;
+        int length;
+        bool compressed;
 
-    int width;
-    int height;
+        int width;
+        int height;
 
-    int frameRate;
-    int frameCount;
+        int frameRate;
+        int frameCount;
 
-    bool valid;
+        bool valid;
 
-    QImage thumb;
+        QImage thumb;
 
-    QVector<SwfTag> tags;
-                    
-    // guessed from tags
-    bool containsVideo;
-    bool containsImage;
+        QVector<SwfTag> tags;
 
-    static SwfFileInfo* parseSwfFile(const QString& file);
+        // guessed from tags
+        bool containsVideo;
+        bool containsImage;
+        bool thumbGenerated;
+
+        static SwfFileInfo* parseSwfFile(const QString& file);
+
+    public slots:
+        void onThumbFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+            thumbGenerated = true;
+        }
+
 };
 
 /**
@@ -155,7 +166,7 @@ static unsigned int getUI32(const unsigned char *buf)
     return v;
 }
 
-static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailByGnash(SwfFileInfo* sfi, const QString& file)
 {
     if (!QFile::exists("/usr/bin/dump-gnash")) {
         return QImage();
@@ -168,17 +179,26 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
     int tmpfd = mkstemp(file_tmpl);
     close(tmpfd);
-    qDebug() << "getThumbnailByGnash " << file_tmpl;
     QString cmdline = tmpl.arg(file_tmpl).arg(file).arg(sfi->width).arg(sfi->height);
     qDebug() << cmdline;
 
-    QProcess gnash;
-    gnash.start(cmdline);
-    if (!gnash.waitForStarted()) 
-        return img;
+    sfi->thumbGenerated = false;
 
-    if (!gnash.waitForFinished(5000))
-        return img;
+    QProcess gnash;
+    QObject::connect(&gnash, SIGNAL(finished(int, QProcess::ExitStatus)), sfi,
+            SLOT(onThumbFinished(int, QProcess::ExitStatus)));
+    gnash.start(cmdline);
+
+    QTime t;
+    t.start();
+    while (t.elapsed() < PROC_TIMEOUT && !sfi->thumbGenerated) {
+        while (qApp->hasPendingEvents() && !sfi->thumbGenerated)
+            qApp->processEvents();
+    }
+    qDebug() << "elapsed: " << t.elapsed();
+    if (!sfi->thumbGenerated) {
+        gnash.kill();
+    }
 
     img = QImage(file_tmpl);
     //img.save("output.png");
@@ -187,7 +207,7 @@ static QImage getThumbnailByGnash(const SwfFileInfo* sfi, const QString& file)
     return img;
 }
 
-static QImage getThumbnailByFfmpeg(const SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailByFfmpeg(SwfFileInfo* sfi, const QString& file)
 {
     if (!QFile::exists("/usr/bin/ffmpegthumbnailer")) {
         return QImage();
@@ -202,13 +222,23 @@ static QImage getThumbnailByFfmpeg(const SwfFileInfo* sfi, const QString& file)
     QString cmdline = tmpl.arg(file).arg(file_tmpl).arg(sfi->width);
     qDebug() << cmdline;
 
+    sfi->thumbGenerated = false;
     QProcess ffmpeg;
+    QObject::connect(&ffmpeg, SIGNAL(finished(int, QProcess::ExitStatus)), sfi,
+            SLOT(onThumbFinished(int, QProcess::ExitStatus)));
     ffmpeg.start(cmdline);
-    if (!ffmpeg.waitForStarted()) 
-        return img;
 
-    if (!ffmpeg.waitForFinished(5000))
-        return img;
+    QTime t;
+    t.start();
+    while (t.elapsed() < PROC_TIMEOUT && !sfi->thumbGenerated) {
+        while (qApp->hasPendingEvents() && !sfi->thumbGenerated)
+            qApp->processEvents();
+    }
+    qDebug() << "elapsed: " << t.elapsed();
+
+    if (!sfi->thumbGenerated) {
+        ffmpeg.kill();
+    }
 
     img = QImage(file_tmpl);
     //img.save("output.png");
@@ -217,7 +247,7 @@ static QImage getThumbnailByFfmpeg(const SwfFileInfo* sfi, const QString& file)
     return img;
 }
 
-static QImage getThumbnailFromSwf(const SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailFromSwf(SwfFileInfo* sfi, const QString& file)
 {
     int sz = sfi->width;
     QImage img;
@@ -546,3 +576,4 @@ void QSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
     }
 }
 
+#include "swfplayer.moc"
