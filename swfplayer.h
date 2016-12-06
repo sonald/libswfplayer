@@ -1,70 +1,67 @@
-#ifndef _SWF_PLAYER_H
-#define _SWF_PLAYER_H 
+/* -------------------------------------------------------------------------
+//	文件名		：	swfplayer.h
+//	创建者		：	gjk
+//	创建时间	：	2016-12-06 12:01:01
+//	功能描述	：
+//
+// -----------------------------------------------------------------------*/
+#ifndef __SWF_PLAYER_H_
+#define __SWF_PLAYER_H_
 
 #include <QtCore>
 #include <QImage>
 #include <QWebView>
 
-struct SwfFileInfo;
+class KSwfFileInfo;
+class KSwfPlayer: public QWebView
+{
+	Q_OBJECT
+public:
+	KSwfPlayer(QWidget* parent = 0);
+	virtual ~KSwfPlayer();
+	static bool checkPreRequirements();
 
-class QSwfPlayer: public QWebView {
-    Q_OBJECT
-    public:
-        //check requirements for this player to work correctly.
-        static bool checkPreRequirements();
+	enum SwfPlayState
+	{
+		Invalid,		// no swf loaded
+		Loaded,		// swf is loaded, and not playing
+		Playing,
+		Paused
+	};
 
-        enum State {
-            Invalid, // no swf loaded
-            Loaded, // swf is loaded, and not playing
-            Playing,
-            Paused
-        };
-        QSwfPlayer(QWidget* parent = 0);
+public slots:
+	void Play();
+	void Stop();
+	void Pause();
+	void Grab(QString strFilePath);
+	void OnLoadFinished(bool bLoadFinished);
 
-    public slots:
-        //NOTE: not all swf can be stopped/paused
-        void play();
-        void stop();
-        void pause();
-        // grab a snapshot of current content when playing
-        void grab(QString filepath);
+public:
+	QImage ThumbNail() const;
+	QSize SizePrefered() const { return m_SizePrefered; }
+	SwfPlayState GetSwfPlayerState() { return m_eSwfPlayerState; }
 
-        // preview of swf if it contains video info, 
-        // else extract a frame from flash by gnash, if that fails,
-        // return a blank image with size of swf 
-        QImage thumbnail() const;
-        // size of swf if it's loaded.
-        QSize preferedSize() const { return _preferedSize; }
-        State state() { return _state; }
+	void LoadSwf(QString& strFileName);
 
-        // load a swf file from filename (absolute or relative path) and then parse file 
-        // to get thumbnail, size info
-        void loadSwf(QString& filename);
+	void EnableDebug(bool bEnableDebug);
 
-        // turn on menu of inspection for debugging
-        void enableDebug(bool on);
+protected:
+	void resizeEvent(QResizeEvent *event);
+	void showEvent(QShowEvent *event);
+	void hideEvent(QHideEvent *event);
+	void closeEvent(QCloseEvent *event);
+	void contextMenuEvent(QContextMenuEvent * event);
 
-    protected:
-        void resizeEvent(QResizeEvent *event);
-        void showEvent(QShowEvent *event);
-        void hideEvent(QHideEvent *event);
-        void closeEvent(QCloseEvent *event);
-        void contextMenuEvent(QContextMenuEvent * event);
+private:
+	QVariant Eval(const QString& script);
 
-    private:
-        bool _loaded;
-        SwfFileInfo *_swfInfo;
-        QSize _preferedSize;
-        State _state;
-        bool _enableDebug;
-
-        QVariant eval(const QString& script);
-
-    private slots:
-        void onLoadFinished(bool ok);
+private:
+	bool		m_bLoaded;
+	KSwfFileInfo*		m_pSwfInfo;
+	QSize		m_SizePrefered;
+	SwfPlayState		m_eSwfPlayerState;
+	bool m_bEnableDebug;
 };
 
-
-
-#endif /* ifndef _SWF_PLAYER_H */
+#endif /* ifndef __SWF_PLAYER_H_ */
 

@@ -1,65 +1,68 @@
+/* -------------------------------------------------------------------------
+//	文件名		：	swfplayer.cpp
+//	创建者		：	gjk
+//	创建时间	：	2016-12-06 12:01:13
+//	功能描述	：
+//
+// -----------------------------------------------------------------------*/
+#ifdef interface
+#undef interface
+#endif
 #include <QtWebKit>
 #include "swfplayer.h"
-
 #include <vector>
 #include <map>
 #include <set>
-
 #include <zlib.h>
-
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#ifndef PROC_TIMEOUT
 #define PROC_TIMEOUT 3000
+#endif
 
-static std::map<int, std::string> tag_videos = {
-    {60, "VideoStream"},
-    {61, "VideoFrame"},
+static std::map<int, std::string> s_tag_videos =
+{
+	{60, "VideoStream"},
+	{61, "VideoFrame"},
 };
 
-static std::map<int, std::string> tag_images = {
-    {6, "DefineBits"},
-    {21, "DefineBitsJPEG2"},
-    {35, "DefineBitsJPEG3"},
-    {90, "DefineBitsJPEG4"},
-    {20, "DefineBitsLossless"},
-    {36, "DefineBitsLossless2"},
+static std::map<int, std::string> s_tag_images =
+{
+	{6, "DefineBits"},
+	{21, "DefineBitsJPEG2"},
+	{35, "DefineBitsJPEG3"},
+	{90, "DefineBitsJPEG4"},
+	{20, "DefineBitsLossless"},
+	{36, "DefineBitsLossless2"},
 };
 
-typedef struct SwfTag {
-    unsigned type;
-    unsigned int len;
+typedef struct SwfTag
+{
+	unsigned nType;
+	unsigned int nLen;
 } SwfTag;
 
-class SwfFileInfo: public QObject {
-    Q_OBJECT
-    public:
-        QString filename;
+class KSwfFileInfo : public QObject {
+public:
+	QString strFileName;
+	char m_szSig[4];
+	int m_nVersion;
+	int m_nLength;
+	bool m_bComPressed;
+	int m_nWidth;
+	int m_nHeight;
+	int m_nFrameRate;
+	int m_nFrameCount;
+	bool m_bValid;
+	QImage m_ImgThumb;
+	QVector<SwfTag> m_vSwfTags;
+	bool m_bContainsVideo;
+	bool m_bContainsImage;
 
-        char sig[4];
-        int version;
-        int length;
-        bool compressed;
-
-        int width;
-        int height;
-
-        int frameRate;
-        int frameCount;
-
-        bool valid;
-
-        QImage thumb;
-
-        QVector<SwfTag> tags;
-
-        // guessed from tags
-        bool containsVideo;
-        bool containsImage;
-
-        static SwfFileInfo* parseSwfFile(const QString& file);
+	static KSwfFileInfo* ParseSwfFile(const QString& strfile);
 };
 
 /**
@@ -69,611 +72,653 @@ class SwfFileInfo: public QObject {
  * <param name="wmode" value="opaque" />
  */
 
-static const char templ[] = R"(
+static const char s_szPlayerScript[] = R"(
 <html lang="en">
-    <head>
-        <title>Player</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
-        <script type="text/javascript" src="%2"></script>
-        <style>
-            html, body {
-               height: 100%;
-               width: 100%;
-               margin: 0;
-               padding: 0;
-            }
+	<head>
+		<title>Player</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+		<script type="text/javascript" src="%2"></script>
+		<style>
+			html, body
+			{
+				height: 100%;
+				width: 100%;
+				margin: 0;
+				padding: 0;
+			}
 
-            #player {
-                margin: 0;
-            }
+			#player
+			{
+				margin: 0;
+			}
 
-            body {
-                background-color: lightblue;
-            }
+			body
+			{
+				background-color: lightblue;
+			}
 
-        </style>
-    </head>
-    <body>
-        <object id="player" type="application/x-shockwave-flash" width="100%" height="100%">
-            <param name="movie" value="%1" />
-            <param name="quality" value="high" />
-            <param name="loop" value="false" />
-            <param name="play" value="false" />
-            <param name="menu" value="false" />
-            <param name="allowFullScreen" value="false" />
-            <param name="wmode" value="opaque" />
-        </object>
+		</style>
+	</head>
+	<body>
+		<object id="player" type="application/x-shockwave-flash" width="100%" height="100%">
+			<param name="movie" value="%1" />
+			<param name="quality" value="high" />
+			<param name="loop" value="false" />
+			<param name="play" value="false" />
+			<param name="menu" value="false" />
+			<param name="allowFullScreen" value="false" />
+			<param name="wmode" value="opaque" />
+		</object>
 
 
-        <script type="text/javascript">
-          function Play(){
-              document.getElementById('player').Play();
-          }
+		<script type="text/javascript">
+			function Play()
+			{
+				document.getElementById('player').Play();
+			}
 
-          function Pause(){
-              document.getElementById('player').StopPlay();
-          }
+			function Pause()
+			{
+				document.getElementById('player').StopPlay();
+			}
 
-          function Stop(){
-              //document.getElementById('player').GotoFrame(1);
-              document.getElementById('player').Rewind();
-          }
+			function Stop()
+			{
+				//document.getElementById('player').GotoFrame(1);
+				document.getElementById('player').Rewind();
+			}
 
-          function adjustSize() {
-              var $obj = document.getElementById('player');
-              $obj.style.position = "absolute";
-              $obj.style.left = (document.documentElement.clientWidth - $obj.width)/2;
-              $obj.style.top = (document.documentElement.clientHeight - $obj.height)/2;
-          }
-          //window.addEventListener('resize', adjustSize);
-        </script>
-    </body>
+			function adjustSize()
+			{
+				var $obj = document.getElementById('player');
+				$obj.style.position = "absolute";
+				$obj.style.left = (document.documentElement.clientWidth - $obj.width)/2;
+				$obj.style.top = (document.documentElement.clientHeight - $obj.height)/2;
+			}
+			//window.addEventListener('resize', adjustSize);
+		</script>
+	</body>
 </html>
 )";
 
 // swf parsing helper
 static int getInt(const unsigned char* buf, int bits, int off)
 {
-    unsigned int val = 0;
-    int pos = off;
+	unsigned int val = 0;
+	int pos = off;
 
-    for (int i = 0; i < bits; i++) {
-        val <<=1;
-        int bit = (buf[(off + i)/8] >> (7-pos)) & 1;
-        val |= bit;
-        pos++;
-        if (pos == 8) pos = 0;
-    }
+	for (int i = 0; i < bits; i++) {
+		val <<=1;
+		int bit = (buf[(off + i)/8] >> (7-pos)) & 1;
+		val |= bit;
+		pos++;
+		if (pos == 8) pos = 0;
+	}
 
-    return val;
+	return val;
 }
 
 static unsigned short getUI16(const unsigned char *buf)
 {
-    unsigned short v = *buf++;
-    v |= *buf << 8;
-    return v;
+	unsigned short v = *buf++;
+	v |= *buf << 8;
+	return v;
 }
 
 static unsigned int getUI32(const unsigned char *buf)
 {
-    unsigned int v = *buf++;
-    v |= (*buf++ << 8);
-    v |= (*buf++ << 16);
-    v |= (*buf << 24);
-    return v;
+	unsigned int v = *buf++;
+	v |= (*buf++ << 8);
+	v |= (*buf++ << 16);
+	v |= (*buf << 24);
+	return v;
 }
 
-static int execWithTimeout(const QStringList& cmd, int timeout)
+static int execWithTimeout(const QStringList& cmdList, int timeout)
 {
-    int pid = fork();
-    if (pid < 0) 
-        return -1;
-    else if (pid > 0) {
-        //parent
-        QTime t;
-        t.start();
-        while (t.elapsed() < timeout && waitpid(pid, 0, WNOHANG) >= 0) {
-            usleep(100000);
-        }
+	int pid = fork();
+	if (pid < 0)
+		return -1;
+	else if (pid > 0)
+	{
+		//parent
+		QTime t;
+		t.start();
+		while (t.elapsed() < timeout && waitpid(pid, 0, WNOHANG) >= 0)
+			usleep(100000);
 
-        if (!kill(pid, 0)) kill(pid, SIGKILL);
+		if (!kill(pid, 0))
+			kill(pid, SIGKILL);
+	}
+	else
+	{
+		char* args[cmdList.size()+1];
+		for (int i = 0; i < cmdList.size(); i++)
+		{
+			args[i] = strdup(cmdList[i].toUtf8().constData());
+		}
 
-    } else {
-        char* args[cmd.size()+1];
-        for (int i = 0; i < cmd.size(); i++) {
-            args[i] = strdup(cmd[i].toUtf8().constData());
-        }
-        args[cmd.size()] = NULL;
-        execvp(args[0], args);
-    }
-    return 0;
+		args[cmdList.size()] = NULL;
+		execvp(args[0], args);
+	}
+
+	return 0;
 }
 
-static QImage getThumbnailByGnash(SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailByGnash(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
-    if (!QFile::exists("/usr/bin/dump-gnash")) {
-        return QImage();
-    }
+	if (!QFile::exists("/usr/bin/dump-gnash"))
+		return QImage();
 
-    char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
-    int tmpfd = mkstemp(file_tmpl);
-    close(tmpfd);
-    QStringList cmd;
-    cmd << "dump-gnash";
-    cmd << "--screenshot"; 
-    cmd << "last"; 
-    cmd << "--screenshot-file";
-    cmd << QString::fromUtf8(file_tmpl);
-    cmd << file;
-    cmd << "--max-advances=20"; 
-    cmd << "--timeout=10"; 
-    cmd << QString("--width=%1").arg(sfi->width); 
-    cmd << QString("--height=%1").arg(sfi->height); 
-    cmd << "-r1";
+	char szTmpFile[] = ("/tmp/jinshan.XXXXXX");
+	int nTmpFd = mkstemp(szTmpFile);
+	close(nTmpFd);
+	QStringList cmdList;
+	cmdList << "dump-gnash";
+	cmdList << "--screenshot";
+	cmdList << "last";
+	cmdList << "--screenshot-file";
+	cmdList << QString::fromUtf8(szTmpFile);
+	cmdList << strFile;
+	cmdList << "--max-advances=20";
+	cmdList << "--timeout=10";
+	cmdList << QString("--width=%1").arg(pSwfFileInfo->m_nWidth);
+	cmdList << QString("--height=%1").arg(pSwfFileInfo->m_nHeight);
+	cmdList << "-r1";
 
-    qDebug() << cmd.join(" ");
+	cmdList.join(" ");
 
-    QTime t;
-    t.start();
-    execWithTimeout(cmd, PROC_TIMEOUT);
-    qDebug() << "elapsed: " << t.elapsed();
+	QTime time;
+	time.start();
+	execWithTimeout(cmdList, PROC_TIMEOUT);
+#if _DEBUG
+	qDebug() << "elapsed: " << time.elapsed();
+#endif
+	QImage img = QImage(szTmpFile);
 
-    QImage img = QImage(file_tmpl);
-    //img.save("output.png");
-
-    unlink(file_tmpl);
-    return img;
+	unlink(szTmpFile);
+	return img;
 }
 
-static QImage getThumbnailByFfmpeg(SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailByFfmpeg(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
-    if (!QFile::exists("/usr/bin/ffmpegthumbnailer")) {
-        return QImage();
-    }
+	if (!QFile::exists("/usr/bin/ffmpegthumbnailer"))
+		return QImage();
 
-    char file_tmpl[] = ("/tmp/jinshan.XXXXXX");
-    int tmpfd = mkstemp(file_tmpl);
-    close(tmpfd);
+	char szTmpFile[] = ("/tmp/jinshan.XXXXXX");
+	int nTmpFd = mkstemp(szTmpFile);
+	close(nTmpFd);
 
-    QStringList cmd;
-    cmd << "ffmpegthumbnailer";
-    cmd << "-i";
-    cmd << file;
-    cmd << "-o";
-    cmd << QString::fromUtf8(file_tmpl);
-    cmd << "-s";
-    cmd << QString("%1").arg(sfi->width);
+	QStringList cmdList;
+	cmdList << "ffmpegthumbnailer";
+	cmdList << "-i";
+	cmdList << strFile;
+	cmdList << "-o";
+	cmdList << QString::fromUtf8(szTmpFile);
+	cmdList << "-s";
+	cmdList << QString("%1").arg(pSwfFileInfo->m_nWidth);
 
-    qDebug() << cmd.join(" ");
+	cmdList.join(" ");
 
-    QTime t;
-    t.start();
-    execWithTimeout(cmd, PROC_TIMEOUT);
-    qDebug() << "elapsed: " << t.elapsed();
+	QTime time;
+	time.start();
+	execWithTimeout(cmdList, PROC_TIMEOUT);
+#if _DEBUG
+	qDebug() << "elapsed: " << time.elapsed();
+#endif
+	QImage img = QImage(szTmpFile);
 
-    QImage img = QImage(file_tmpl);
-    //img.save("output.png");
-
-    unlink(file_tmpl);
-    return img;
+	unlink(szTmpFile);
+	return img;
 }
 
-static QImage getThumbnailFromSwf(SwfFileInfo* sfi, const QString& file)
+static QImage getThumbnailFromSwf(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
-    int sz = sfi->width;
-    QImage img;
+	QImage Img;
 
-    if (sfi->containsImage || sfi->containsVideo) {
-        img = getThumbnailByFfmpeg(sfi, file);
-        if (!img.isNull()) {
-            return img;
-        }
-    }
+	if (pSwfFileInfo->m_bContainsImage || pSwfFileInfo->m_bContainsVideo)
+	{
+		Img = getThumbnailByFfmpeg(pSwfFileInfo, strFile);
+		if (!Img.isNull())
+			return Img;
+	}
 
-    img = getThumbnailByGnash(sfi, file);
-    if (!img.isNull()) {
-        return img;
-    }
+	Img = getThumbnailByGnash(pSwfFileInfo, strFile);
+	if (!Img.isNull())
+		return Img;
 
-    QImage blank(QSize(sfi->width, sfi->height), QImage::Format_RGB888);
-    QPainter p(&blank);
-    QRect r(QPoint(0, 0), QSize(sfi->width, sfi->height));
-    p.fillRect(r, Qt::gray);
-    p.setPen(Qt::red);
-    p.drawText(r.center(), "SWF");
-    p.end();
-    return blank;
+	QImage ImgBlank(QSize(pSwfFileInfo->m_nWidth, pSwfFileInfo->m_nHeight), QImage::Format_RGB888);
+	QPainter paint(&ImgBlank);
+	QRect rect(QPoint(0, 0), QSize(pSwfFileInfo->m_nWidth, pSwfFileInfo->m_nHeight));
+	paint.fillRect(rect, Qt::gray);
+	paint.setPen(Qt::red);
+	paint.drawText(rect.center(), "SWF");
+	paint.end();
+	return ImgBlank;
 }
-            
-static void parseTags(SwfFileInfo& sfi, const unsigned char *buf, const unsigned char* end)
+
+static void parseTags(KSwfFileInfo& swfFileInfo, const unsigned char *buf, const unsigned char* end)
 {
-    int count = 0;
+	int count = 0;
 
-    static std::set<int> forces = {
-        21
-    };
+	static std::set<int> forces =
+	{
+		21
+	};
 
-    while (end - buf > 0 && count++ < 100) {
-        unsigned short tagAndLen = getUI16(buf);
-        buf += 2;
-        unsigned  id = tagAndLen >> 6;
-        unsigned int len = tagAndLen & 0x3f;
-        if (len == 63 || forces.find(id) != forces.end()) {
-            len = getUI32(buf);
-            buf += 4;
-        }
+	while (end - buf > 0 && count++ < 100)
+	{
+		unsigned short tagAndLen = getUI16(buf);
+		buf += 2;
+		unsigned  id = tagAndLen >> 6;
+		unsigned int len = tagAndLen & 0x3f;
+		if (len == 63 || forces.find(id) != forces.end())
+		{
+			len = getUI32(buf);
+			buf += 4;
+		}
 
-        sfi.tags.push_back((SwfTag){id, len});
-        //qDebug() << "Tag: type " << id << "len " << len;
-        buf += len; // bypass data
-    }
+		swfFileInfo.m_vSwfTags.push_back((SwfTag){id, len});
+		buf += len; // bypass data
+	}
 }
 
-SwfFileInfo* SwfFileInfo::parseSwfFile(const QString& file)
+KSwfFileInfo* KSwfFileInfo::ParseSwfFile(const QString& strFile)
 {
-    SwfFileInfo *sfi = new SwfFileInfo;
-    sfi->valid = false;
-    sfi->filename = file;
+	KSwfFileInfo *pSwfFileInfo = new KSwfFileInfo;
+	if (!pSwfFileInfo)
+		return NULL;
 
-    QFile f(file);
-    if (!f.open(QIODevice::ReadOnly))
-        return sfi;
+	pSwfFileInfo->m_bValid = false;
+	pSwfFileInfo->strFileName = strFile;
 
-    /*
-     * uint32_t signature: 24;     // (F|C|Z)WS
-     * uint32_t version: 8;
-     * uint32_t length; // file length
-     * below maybe compressed
-     * RECT frameSize; // Frame size in twips
-     * uint16_t frameRate;
-     * uint16_t frameCount;
-     */
-    int bufsz = 1048576;
-    unsigned char buf[bufsz];
-    f.read((char*)buf, sizeof buf);
+	QFile file(strFile);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		delete pSwfFileInfo;
+		pSwfFileInfo = NULL;
+		return NULL;
+	}
 
-    switch (buf[0]) {
-        case 'Z': 
-            break;
+	/*
+	 * uint32_t signature: 24;     // (F|C|Z)WS
+	 * uint32_t m_nVersion: 8;
+	 * uint32_t m_nLength; // file m_nLength
+	 * below maybe m_bComPressed
+	 * RECT frameSize; // Frame size in twips
+	 * uint16_t m_nFrameRate;
+	 * uint16_t m_nFrameCount;
+	 */
+	int bufsz = 1048576;
+	unsigned char buf[bufsz];
+	file.read((char*)buf, sizeof buf);
 
-        case 'F':
-        case 'C': {
-            if (buf[1] != 'W' || buf[2] != 'S') {
-                break;
-            }
+	switch (buf[0]) {
+		case 'Z':
+			break;
+		case 'F':
+		case 'C':
+		{
+			if (buf[1] != 'W' || buf[2] != 'S')
+				break;
 
-            memcpy(sfi->sig, buf, 3);
-            sfi->sig[3] = 0;
-            sfi->version = buf[3];
-            sfi->length = *((int*)(buf+4));
-            sfi->compressed = buf[0] == 'C';
+			memcpy(pSwfFileInfo->m_szSig, buf, 3);
+			pSwfFileInfo->m_szSig[3] = 0;
+			pSwfFileInfo->m_nVersion = buf[3];
+			pSwfFileInfo->m_nLength = *((int*)(buf+4));
+			pSwfFileInfo->m_bComPressed = buf[0] == 'C';
 
-            if (sfi->compressed) {
-                unsigned char out[sizeof buf - 8];
-                uLongf outlen = sizeof out;
-                uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof buf - 8);
+			if (pSwfFileInfo->m_bComPressed)
+			{
+				unsigned char out[sizeof(buf) - 8];
+				uLongf outlen = sizeof(out);
+#ifdef KINGSOFT_MEDIAFLASH
+				uLong uErrlv = 0;
+				uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof(buf) - 8, uErrlv);
+#else
+				uncompress ((Bytef*)out, &outlen, (Bytef*)(buf + 8), sizeof(buf) - 8);
+#endif
+				memcpy(buf + 8, out, sizeof(buf) - 8);
+			}
 
-                memcpy(buf + 8, out, sizeof buf - 8);
-            }
+			unsigned char *bufnext = buf + 8;
 
-            unsigned char *bufnext = buf + 8;
+			int nbits = getInt(bufnext, 5, 0);
+			int off = 5;
 
-            int nbits = getInt(bufnext, 5, 0);
-            int off = 5;
+			int xmin = getInt(bufnext, nbits, off);
+			int xmax = getInt(bufnext+(5+nbits)/8, nbits, (5+nbits)%8);
+			int ymin = getInt(bufnext+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
+			int ymax = getInt(bufnext+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
 
-            int xmin = getInt(bufnext, nbits, off);
-            int xmax = getInt(bufnext+(5+nbits)/8, nbits, (5+nbits)%8);
-            int ymin = getInt(bufnext+(5+nbits*2)/8, nbits, (5+nbits*2)%8);
-            int ymax = getInt(bufnext+(5+nbits*3)/8, nbits, (5+nbits*3)%8);
-            
-            bufnext += (5+nbits*3)/8 + 3;
-            sfi->frameRate = getUI16(bufnext);
-            sfi->frameRate >>= 8;
-            sfi->frameCount = getUI16(bufnext+2);
-            bufnext += 4;
+			bufnext += (5+nbits*3)/8 + 3;
+			pSwfFileInfo->m_nFrameRate = getUI16(bufnext);
+			pSwfFileInfo->m_nFrameRate >>= 8;
+			pSwfFileInfo->m_nFrameCount = getUI16(bufnext+2);
+			bufnext += 4;
 
-            sfi->width = (xmax - xmin)/20;
-            sfi->height = (ymax - ymin)/20;
+			pSwfFileInfo->m_nWidth = (xmax - xmin)/20;
+			pSwfFileInfo->m_nHeight = (ymax - ymin)/20;
+#if _DEBUG
+			qDebug() << pSwfFileInfo->m_szSig << pSwfFileInfo->m_nVersion << pSwfFileInfo->m_nLength
+							<< "nbits = " << (int)nbits
+							<< xmin << xmax << ymin << ymax
+							<< "w = " << pSwfFileInfo->m_nWidth << "h = " << pSwfFileInfo->m_nHeight
+							<< "rate = " << pSwfFileInfo->m_nFrameRate << "count = " << pSwfFileInfo->m_nFrameCount;
+#endif
+			const unsigned char *end = buf + bufsz;
+			size_t offset = bufnext - buf;
+			if (end - bufnext > pSwfFileInfo->m_nLength)
+			{
+				end = bufnext + pSwfFileInfo->m_nLength - offset;
+			}
 
-            qDebug() << sfi->sig << sfi->version << sfi->length 
-                << "nbits = " << (int)nbits 
-                << xmin << xmax << ymin << ymax 
-                << "w = " << sfi->width << "h = " << sfi->height
-                << "rate = " << sfi->frameRate << "count = " << sfi->frameCount;
+			parseTags(*pSwfFileInfo, bufnext, end);
 
-            const unsigned char *end = buf + bufsz;
-            size_t offset = bufnext - buf;
-            if (end - bufnext > sfi->length) {
-                end = bufnext + sfi->length - offset;
-            }
-            parseTags(*sfi, bufnext, end);
+			pSwfFileInfo->m_bContainsVideo = false;
+			pSwfFileInfo->m_bContainsImage = false;
 
-            sfi->containsVideo = false;
-            sfi->containsImage = false;
+			Q_FOREACH(const SwfTag& t, pSwfFileInfo->m_vSwfTags)
+			{
+				if (s_tag_videos.find(t.nType) != s_tag_videos.end())
+					pSwfFileInfo->m_bContainsVideo = true;
 
-            Q_FOREACH(const SwfTag& t, sfi->tags) {
-                //qDebug() << "check tag " << t.type;
-                if (tag_videos.find(t.type) != tag_videos.end()) {
-                    sfi->containsVideo = true;
-                }
+				if (s_tag_images.find(t.nType) != s_tag_images.end())
+					pSwfFileInfo->m_bContainsImage = true;
+			}
 
-                if (tag_images.find(t.type) != tag_images.end()) {
-                    sfi->containsImage = true;
-                }
-            }
+#if _DEBUG
+			if (pSwfFileInfo->m_bContainsVideo)
+				qDebug() << "contains video stream";
 
-            if (sfi->containsVideo) {
-                qDebug() << "contains video stream";
-            }
+			if (pSwfFileInfo->m_bContainsImage)
+				qDebug() << "contains image";
+#endif
+			pSwfFileInfo->m_bValid = true;
+		}
 
-            if (sfi->containsImage) {
-                qDebug() << "contains image";
-            }
-            sfi->valid = true;
-        }
+		default:
+			break;
+	}
 
-        default:
-            break;
-    }
+	file.close();
 
-    f.close();
+	pSwfFileInfo->m_ImgThumb = getThumbnailFromSwf(pSwfFileInfo, strFile);
 
-    sfi->thumb = getThumbnailFromSwf(sfi, file);
-
-    return sfi;
+	return pSwfFileInfo;
 }
 
-QSwfPlayer::QSwfPlayer(QWidget* parent)
-    : QWebView(parent),
-    _loaded(false),
-    _state(QSwfPlayer::Invalid),
-    _swfInfo(NULL),
-    _enableDebug(false)
+KSwfPlayer::KSwfPlayer(QWidget* parent)
+	: QWebView(parent),
+	m_bLoaded(false),
+	m_eSwfPlayerState(KSwfPlayer::Invalid),
+	m_pSwfInfo(NULL),
+	m_bEnableDebug(false)
 {
-    if (settings()) {
-        settings()->setAttribute(QWebSettings::PluginsEnabled, true);
-        settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
-        settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
-    }
+	if (settings())
+	{
+		settings()->setAttribute(QWebSettings::PluginsEnabled, true);
+		settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
+		settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
+	}
 }
 
-QVariant QSwfPlayer::eval(const QString& script)
+KSwfPlayer::~KSwfPlayer()
 {
-    if (page() && page()->mainFrame())
-        return page()->mainFrame()->evaluateJavaScript(script);
-
-    return QVariant();
+	if (m_pSwfInfo)
+	{
+		delete m_pSwfInfo;
+		m_pSwfInfo = NULL;
+	}
 }
 
-void QSwfPlayer::play()
+QVariant KSwfPlayer::Eval(const QString& script)
 {
-    if (_state == QSwfPlayer::Invalid) return;
-    _state = QSwfPlayer::Playing;
-    eval("Play()");
+	if (page() && page()->mainFrame())
+		return page()->mainFrame()->evaluateJavaScript(script);
+
+	return QVariant();
 }
 
-void QSwfPlayer::stop()
+void KSwfPlayer::Play()
 {
-    if (_state == QSwfPlayer::Invalid) return;
-    _state = QSwfPlayer::Loaded;
-    eval("Stop()");
+	if (m_eSwfPlayerState == KSwfPlayer::Invalid)
+		return;
+
+	m_eSwfPlayerState = KSwfPlayer::Playing;
+	Eval("Play()");
 }
 
-void QSwfPlayer::pause()
+void KSwfPlayer::Stop()
 {
-    if (_state == QSwfPlayer::Invalid) return;
-    _state = QSwfPlayer::Paused;
-    eval("Pause()");
+	if (m_eSwfPlayerState == KSwfPlayer::Invalid)
+		return;
+
+	m_eSwfPlayerState = KSwfPlayer::Loaded;
+	Eval("Stop()");
 }
 
-void QSwfPlayer::grab(QString filepath)
+void KSwfPlayer::Pause()
 {
-    if (_state == QSwfPlayer::Invalid) return;
-
-    QPixmap pixmap(this->size());
-    this->render(&pixmap);
-
-    if (filepath.isEmpty())
-        filepath = "swfsnapshot.png";
-    pixmap.save(filepath);
+	if (m_eSwfPlayerState == KSwfPlayer::Invalid)
+		return;
+	m_eSwfPlayerState = KSwfPlayer::Paused;
+	Eval("Pause()");
 }
 
-void QSwfPlayer::resizeEvent(QResizeEvent *event)
+void KSwfPlayer::Grab(QString strFilePath)
 {
-    return QWebView::resizeEvent(event);
+	if (m_eSwfPlayerState == KSwfPlayer::Invalid)
+		return;
+
+	QPixmap pixmap(this->size());
+	this->render(&pixmap);
+
+	if (strFilePath.isEmpty())
+		strFilePath = "swfsnapshot.png";
+	pixmap.save(strFilePath);
 }
 
-QImage QSwfPlayer::thumbnail() const
+void KSwfPlayer::resizeEvent(QResizeEvent *event)
 {
-    if (_state != QSwfPlayer::Invalid) {
-        return _swfInfo->thumb;
-    }
-
-    QImage blank(_preferedSize, QImage::Format_RGB888);
-    QPainter p(&blank);
-    QRect r(QPoint(0, 0), _preferedSize);
-    p.fillRect(r, Qt::gray);
-    p.setPen(Qt::red);
-    p.drawText(r.center(), "SWF");
-    p.end();
-
-    return blank;
+	return QWebView::resizeEvent(event);
 }
 
-void QSwfPlayer::onLoadFinished(bool ok)
+QImage KSwfPlayer::ThumbNail() const
 {
-    QObject::disconnect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
+	if (m_eSwfPlayerState != KSwfPlayer::Invalid)
+		return m_pSwfInfo->m_ImgThumb;
 
-    page()->settings()->setAttribute(QWebSettings::PluginsEnabled, true);
-    page()->settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
+	QImage ImgBlank(m_SizePrefered, QImage::Format_RGB888);
+	QPainter paint(&ImgBlank);
+	QRect rect(QPoint(0, 0), m_SizePrefered);
+	paint.fillRect(rect, Qt::gray);
+	paint.setPen(Qt::red);
+	paint.drawText(rect.center(), "SWF");
+	paint.end();
 
-    QWebFrame *frm = page()->mainFrame();
-    if (frm) {
-        frm->setScrollBarPolicy(Qt::Horizontal, Qt::ScrollBarAlwaysOff);
-        frm->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
-    }
-    
-    _loaded = true;
-    if (_enableDebug) qDebug() << __func__;
+	return ImgBlank;
 }
 
-void QSwfPlayer::loadSwf(QString& filename)
+void KSwfPlayer::OnLoadFinished(bool OnLoadFinished)
 {
-    if (_loaded) {
-        setHtml("");
-    }
-    //reset states
-    _loaded = false;
-    _state = QSwfPlayer::Invalid;
+	QObject::disconnect(this, SIGNAL(loadFinished(bool)), this, SLOT(OnLoadFinished(bool)));
 
-    QFileInfo fi(filename);
-    QString file = QString("file://") + fi.canonicalFilePath();
+	page()->settings()->setAttribute(QWebSettings::PluginsEnabled, true);
+	page()->settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
 
-    _swfInfo = SwfFileInfo::parseSwfFile(filename);
-    if (_swfInfo->valid) {
-        _state = QSwfPlayer::Loaded;
-        _preferedSize = QSize(_swfInfo->width, _swfInfo->height);
-    }
+	QWebFrame *pWebFrame = page()->mainFrame();
+	if (pWebFrame)
+	{
+		pWebFrame->setScrollBarPolicy(Qt::Horizontal, Qt::ScrollBarAlwaysOff);
+		pWebFrame->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
+	}
+
+	m_bLoaded = true;
+	if (m_bEnableDebug)
+		qDebug() << __func__;
 }
 
-void QSwfPlayer::showEvent(QShowEvent *event)
+void KSwfPlayer::LoadSwf(QString& strFileName)
 {
-    qDebug() << __func__;
-    if (!_loaded && _state == QSwfPlayer::Loaded) {
-        QFileInfo fi(_swfInfo->filename);
-        QString file = QString("file://") + fi.canonicalFilePath();
+	if (m_bLoaded)
+		setHtml("");
 
-        QString buf(templ);
-        buf = buf.arg(file);
+	m_bLoaded = false;
+	m_eSwfPlayerState = KSwfPlayer::Invalid;
 
-        QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
-        setHtml(buf);
-    }
+	QFileInfo fileInfo(strFileName);
+	QString strFile = QString("file://") + fileInfo.canonicalFilePath();
 
-    QWebView::showEvent(event);
+	m_pSwfInfo = KSwfFileInfo::ParseSwfFile(strFileName);
+	if (m_pSwfInfo->m_bValid)
+	{
+		m_eSwfPlayerState = KSwfPlayer::Loaded;
+		m_SizePrefered = QSize(m_pSwfInfo->m_nWidth, m_pSwfInfo->m_nHeight);
+	}
 }
 
-void QSwfPlayer::hideEvent(QHideEvent *event)
+void KSwfPlayer::showEvent(QShowEvent *event)
 {
-    qDebug() << __func__;
-    QWebView::hideEvent(event);
+	if (m_bEnableDebug)
+		qDebug() << __func__;
+	if (!m_bLoaded && m_eSwfPlayerState == KSwfPlayer::Loaded)
+	{
+		QFileInfo fileInfo(m_pSwfInfo->strFileName);
+		QString strFile = QString("file://") + fileInfo.canonicalFilePath();
+
+		QString strTmpBuf(s_szPlayerScript);
+		strTmpBuf = strTmpBuf.arg(strFile);
+
+		QObject::connect(this, SIGNAL(loadFinished(bool)), this, SLOT(OnLoadFinished(bool)));
+		setHtml(strTmpBuf);
+	}
+
+	QWebView::showEvent(event);
 }
 
-void QSwfPlayer::closeEvent(QCloseEvent *event)
+void KSwfPlayer::hideEvent(QHideEvent *event)
 {
-    if (_loaded) {
-        if (_state == QSwfPlayer::Playing)
-            this->stop();
-        this->settings()->clearMemoryCaches();
-    }
-    QWebView::closeEvent(event);
+	QWebView::hideEvent(event);
 }
 
-void QSwfPlayer::enableDebug(bool val)
+void KSwfPlayer::closeEvent(QCloseEvent *event)
 {
-    if (_enableDebug == val) {
-        return;
-    }
+	if (m_bLoaded)
+	{
+		if (m_eSwfPlayerState == KSwfPlayer::Playing)
+			this->Stop();
+		this->settings()->clearMemoryCaches();
+	}
 
-    _enableDebug = val;
-    settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, _enableDebug);
+	QWebView::closeEvent(event);
 }
 
-void QSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
+void KSwfPlayer::EnableDebug(bool bEnableDebug)
 {
-    qDebug() << __func__;
-    if (_enableDebug) {
-        QWebView::contextMenuEvent(event);
-    }
+	if (m_bEnableDebug == bEnableDebug)
+		return;
+
+	m_bEnableDebug = bEnableDebug;
+	settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, m_bEnableDebug);
 }
 
-bool QSwfPlayer::checkPreRequirements() 
+void KSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
 {
-    QByteArray chklist[] = {
-        "ffmpegthumbnailer",
-        "dump-gnash"
-    };
-
-    bool res[2] = {
-        false,
-        false
-    };
-
-    QByteArray ba = qgetenv("PATH");
-    if (ba.isEmpty()) {
-        ba = QByteArray("/bin:/usr/bin:/usr/local/bin");
-    }
-
-    QList<QByteArray> paths = ba.split(':');
-    for (int i = 0; i < paths.size(); i++) {
-        for (int j = 0; j < 2; j++) {
-            QString path = QString("%1/%2").arg(paths[i].data()).arg(chklist[j].data());
-            QFileInfo fi(path);
-            if (fi.exists() && fi.isExecutable()) {
-                res[j] = true;
-            }
-        }
-    }
-
-    if (!res[0] || !res[1]) {
-        for (int j = 0; j < 2; j++) {
-            if (!res[j]) qDebug() << QString("%1 is missing").arg(chklist[j].data());
-        }
-        return false;
-    }
-
-    //2. find libflashplugin
-    
-    QString searchPaths[] = {
-        ".mozilla/plugins",
-        ".netscape/plugins",
-        "//System locations",
-        "/usr/lib/browser/plugins",
-        "/usr/local/lib/mozilla/plugins",
-        "/usr/lib/firefox/plugins",
-        "/usr/lib64/browser-plugins",
-        "/usr/lib/browser-plugins",
-        "/usr/lib/mozilla/plugins",
-        "/usr/local/netscape/plugins",
-        "/opt/mozilla/plugins",
-        "/opt/mozilla/lib/plugins",
-        "/opt/netscape/plugins",
-        "/opt/netscape/communicator/plugins",
-        "/usr/lib/netscape/plugins",
-        "/usr/lib/netscape/plugins-libc5",
-        "/usr/lib/netscape/plugins-libc6",
-        "/usr/lib64/netscape/plugins",
-        "/usr/lib64/mozilla/plugins",
-    };
-
-    searchPaths[0] = QString("%1/%2").arg(QDir::homePath()).arg(searchPaths[0]);
-    searchPaths[1] = QString("%1/%2").arg(QDir::homePath()).arg(searchPaths[1]);
-
-    QString nm[] = {
-        "libflashplayer.so",
-    };
-    for (int i = 0; i < 19; i++) {
-        for (int j = 0; j < 1; j++) {
-            QString path = QString("%1/%2").arg(searchPaths[i]).arg(nm[j]);
-            qDebug() << "search " << path;
-            QFileInfo fi(path);
-            if (fi.exists()) {
-                return true;
-            }
-        }
-    }
-
-    qDebug() << QString("%1 is missing").arg(nm[0]);
-    return false;
-
-    //{
-        ////Locations specified by environment variables:
-        //$MOZILLA_HOME/plugins
-        //$MOZ_PLUGIN_PATH
-        //$QTWEBKIT_PLUGIN_PATH
-    //};
+	if (m_bEnableDebug)
+		QWebView::contextMenuEvent(event);
 }
 
-#include "swfplayer.moc"
+bool KSwfPlayer::checkPreRequirements()
+{
+	QByteArray chklist[] =
+	{
+		"ffmpegthumbnailer",
+		"dump-gnash"
+	};
+
+	bool bRes[2] =
+	{
+		false,
+		false
+	};
+
+	QByteArray ba = qgetenv("PATH");
+	if (ba.isEmpty())
+	{
+		ba = QByteArray("/bin:/usr/bin:/usr/local/bin");
+	}
+
+	QList<QByteArray> pathsList = ba.split(':');
+	for (int i = 0; i < pathsList.size(); i++)
+	{
+		for (int j = 0; j < 2; j++)
+		{
+			QString strPath = QString("%1/%2").arg(pathsList[i].data()).arg(chklist[j].data());
+			QFileInfo fileInfo(strPath);
+			if (fileInfo.exists() && fileInfo.isExecutable())
+				bRes[j] = true;
+		}
+	}
+
+	if (!bRes[0] || !bRes[1])
+	{
+#if _DEBUG
+		for (int j = 0; j < 2; j++)
+		{
+			if (!bRes[j])
+				qDebug() << QString("%1 is missing").arg(chklist[j].data());
+		}
+#endif
+		return false;
+	}
+
+	//find libflashplugin
+	QString strSearchPaths[] =
+	{
+		".mozilla/plugins",
+		".netscape/plugins",
+		"//System locations",
+		"/usr/lib/browser/plugins",
+		"/usr/local/lib/mozilla/plugins",
+		"/usr/lib/firefox/plugins",
+		"/usr/lib64/browser-plugins",
+		"/usr/lib/browser-plugins",
+		"/usr/lib/mozilla/plugins",
+		"/usr/local/netscape/plugins",
+		"/opt/mozilla/plugins",
+		"/opt/mozilla/lib/plugins",
+		"/opt/netscape/plugins",
+		"/opt/netscape/communicator/plugins",
+		"/usr/lib/netscape/plugins",
+		"/usr/lib/netscape/plugins-libc5",
+		"/usr/lib/netscape/plugins-libc6",
+		"/usr/lib64/netscape/plugins",
+		"/usr/lib64/mozilla/plugins",
+	};
+
+	strSearchPaths[0] = QString("%1/%2").arg(QDir::homePath()).arg(strSearchPaths[0]);
+	strSearchPaths[1] = QString("%1/%2").arg(QDir::homePath()).arg(strSearchPaths[1]);
+
+	QString strFlashPlayerName[] =
+	{
+		"libflashplayer.so",
+	};
+
+	for (int i = 0; i < 19; i++)
+	{
+		for (int j = 0; j < 1; j++)
+		{
+			QString strPath = QString("%1/%2").arg(strSearchPaths[i]).arg(strFlashPlayerName[j]);
+			QFileInfo fileInfo(strPath);
+			if (fileInfo.exists())
+				return true;
+		}
+	}
+
+#if _DEBUG
+	qDebug() << QString("%1 is missing").arg(strFlashPlayerName[0]);
+#endif
+	return false;
+}
 
