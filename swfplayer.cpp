@@ -702,23 +702,28 @@ bool KSwfPlayer::CheckPlugins()
 
 	QString strFlashPlayerName[] =
 	{
-		"libflashplayer.so",
+		"*flashplayer*.so",
+		"*flashplugin*.so",
 	};
 
 	for (int i = 0; i < 19; i++)
 	{
-		for (int j = 0; j < 1; j++)
+		for (int j = 0; j < 2; j++)
 		{
-			QString strPath = QString("%1/%2").arg(strSearchPaths[i]).arg(strFlashPlayerName[j]);
-			QFileInfo fileInfo(strPath);
-			if (fileInfo.exists())
-				return true;
+            QDir dir(strSearchPaths[i], strFlashPlayerName[j]);
+            QFileInfoList infos = dir.entryInfoList();
+            for (int k = 0; k < infos.size(); k++) 
+            {
+                if (infos[k].exists())
+                    return true;
+            }
 		}
 	}
 
 #if _DEBUG
-	qDebug() << QString("%1 is missing").arg(strFlashPlayerName[0]);
+	qDebug() << QString("flash player is missing");
 #endif
+
 	return false;
 }
 
