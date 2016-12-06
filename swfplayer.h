@@ -19,7 +19,6 @@ class KSwfPlayer: public QWebView
 public:
 	KSwfPlayer(QWidget* parent = 0);
 	virtual ~KSwfPlayer();
-	static bool checkPreRequirements();
 
 	enum SwfPlayState
 	{
@@ -44,6 +43,8 @@ public:
 	void LoadSwf(QString& strFileName);
 
 	void EnableDebug(bool bEnableDebug);
+
+	bool CheckPlugins();
 
 protected:
 	void resizeEvent(QResizeEvent *event);

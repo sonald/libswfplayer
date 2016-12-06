@@ -629,7 +629,7 @@ void KSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
 		QWebView::contextMenuEvent(event);
 }
 
-bool KSwfPlayer::checkPreRequirements()
+bool KSwfPlayer::CheckPlugins()
 {
 	QByteArray chklist[] =
 	{

@@ -20,7 +20,9 @@ class MainWindow: public QTabWidget {
                 //layout->addStretch();
 
                 w = new KSwfPlayer();
-                w->LoadSwf(file);
+                if (w->CheckPlugins()) {
+                    w->LoadSwf(file);
+                }
                 layout->addWidget(w);
 
                 auto *hbox = new QHBoxLayout;
@@ -103,10 +105,6 @@ int main(int argc, char *argv[])
     file = QString::fromUtf8(swffile);
     if (argc == 2) {
         file = (QString::fromUtf8(argv[1]));
-    }
-
-    if (!KSwfPlayer::checkPreRequirements()) {
-        return 0;
     }
 
     //Window which KSwfPlayer window embeds into
