@@ -39,11 +39,8 @@ public:
 	QImage ThumbNail() const;
 	QSize SizePrefered() const { return m_SizePrefered; }
 	SwfPlayState GetSwfPlayerState() { return m_eSwfPlayerState; }
-
 	void LoadSwf(QString& strFileName);
-
 	void EnableDebug(bool bEnableDebug);
-
 	bool CheckPlugins();
 
 protected:

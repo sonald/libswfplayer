@@ -45,7 +45,8 @@ typedef struct SwfTag
 	unsigned int nLen;
 } SwfTag;
 
-class KSwfFileInfo : public QObject {
+class KSwfFileInfo : public QObject
+{
 public:
 	QString strFileName;
 	char m_szSig[4];
@@ -109,7 +110,6 @@ static const char s_szPlayerScript[] = R"(
 			<param name="allowFullScreen" value="false" />
 			<param name="wmode" value="opaque" />
 		</object>
-
 
 		<script type="text/javascript">
 			function Play()
@@ -182,9 +182,9 @@ static int execWithTimeout(const QStringList& cmdList, int timeout)
 	else if (pid > 0)
 	{
 		//parent
-		QTime t;
-		t.start();
-		while (t.elapsed() < timeout && waitpid(pid, 0, WNOHANG) >= 0)
+		QTime time;
+		time.start();
+		while (time.elapsed() < timeout && waitpid(pid, 0, WNOHANG) >= 0)
 			usleep(100000);
 
 		if (!kill(pid, 0))
@@ -210,15 +210,18 @@ static QImage getThumbnailByGnash(KSwfFileInfo* pSwfFileInfo, const QString& str
 	if (!QFile::exists("/usr/bin/dump-gnash"))
 		return QImage();
 
-	char szTmpFile[] = ("/tmp/jinshan.XXXXXX");
-	int nTmpFd = mkstemp(szTmpFile);
-	close(nTmpFd);
+	QTemporaryFile tmpFile;
+	tmpFile.open();
+	tmpFile.close();
+	tmpFile.setAutoRemove(false);
+	QString strTmpFile = tmpFile.fileName();
+
 	QStringList cmdList;
 	cmdList << "dump-gnash";
 	cmdList << "--screenshot";
 	cmdList << "last";
 	cmdList << "--screenshot-file";
-	cmdList << QString::fromUtf8(szTmpFile);
+	cmdList << strTmpFile;
 	cmdList << strFile;
 	cmdList << "--max-advances=20";
 	cmdList << "--timeout=10";
@@ -234,9 +237,9 @@ static QImage getThumbnailByGnash(KSwfFileInfo* pSwfFileInfo, const QString& str
 #if _DEBUG
 	qDebug() << "elapsed: " << time.elapsed();
 #endif
-	QImage img = QImage(szTmpFile);
+	QImage img = QImage(strTmpFile);
+	remove(strTmpFile.toLocal8Bit().data());
 
-	unlink(szTmpFile);
 	return img;
 }
 
@@ -245,16 +248,18 @@ static QImage getThumbnailByFfmpeg(KSwfFileInfo* pSwfFileInfo, const QString& st
 	if (!QFile::exists("/usr/bin/ffmpegthumbnailer"))
 		return QImage();
 
-	char szTmpFile[] = ("/tmp/jinshan.XXXXXX");
-	int nTmpFd = mkstemp(szTmpFile);
-	close(nTmpFd);
+	QTemporaryFile tmpFile;
+	tmpFile.open();
+	tmpFile.close();
+	tmpFile.setAutoRemove(false);
+	QString strTmpFile = tmpFile.fileName();
 
 	QStringList cmdList;
 	cmdList << "ffmpegthumbnailer";
 	cmdList << "-i";
 	cmdList << strFile;
 	cmdList << "-o";
-	cmdList << QString::fromUtf8(szTmpFile);
+	cmdList << strTmpFile;
 	cmdList << "-s";
 	cmdList << QString("%1").arg(pSwfFileInfo->m_nWidth);
 
@@ -266,9 +271,9 @@ static QImage getThumbnailByFfmpeg(KSwfFileInfo* pSwfFileInfo, const QString& st
 #if _DEBUG
 	qDebug() << "elapsed: " << time.elapsed();
 #endif
-	QImage img = QImage(szTmpFile);
+	QImage img = QImage(strTmpFile);
+	remove(strTmpFile.toLocal8Bit().data());
 
-	unlink(szTmpFile);
 	return img;
 }
 
@@ -710,13 +715,13 @@ bool KSwfPlayer::CheckPlugins()
 	{
 		for (int j = 0; j < 2; j++)
 		{
-            QDir dir(strSearchPaths[i], strFlashPlayerName[j]);
-            QFileInfoList infos = dir.entryInfoList();
-            for (int k = 0; k < infos.size(); k++) 
-            {
-                if (infos[k].exists())
-                    return true;
-            }
+			QDir dir(strSearchPaths[i], strFlashPlayerName[j]);
+			QFileInfoList infos = dir.entryInfoList();
+			for (int k = 0; k < infos.size(); k++)
+			{
+				if (infos[k].exists())
+					return true;
+			}
 		}
 	}
 
@@ -726,4 +731,3 @@ bool KSwfPlayer::CheckPlugins()
 
 	return false;
 }
-
