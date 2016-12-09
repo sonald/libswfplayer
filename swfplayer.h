@@ -45,6 +45,7 @@ protected:
 
 private:
 	QVariant Eval(const QString& script);
+    void CleanupFlash();
 
 private:
 	bool		m_bLoaded;

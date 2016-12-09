@@ -19,7 +19,7 @@ class MainWindow: public QTabWidget {
                 auto *layout = new QVBoxLayout(tab1);
                 //layout->addStretch();
 
-                w = new KSwfPlayer();
+                w = new KSwfPlayer(this);
                 if (w->CheckPlugins()) {
                     w->LoadSwf(file);
                 }
@@ -117,6 +117,9 @@ int main(int argc, char *argv[])
     w2->show();
 
     app.exec();
+
+    qDebug() << "cleanup";
+    delete w2;
     return 0;
 }
 

@@ -121,6 +121,12 @@ static const char s_szPlayerScript[] = R"(
 				document.getElementById('player').Rewind();
 			}
 
+            function unload()
+            {
+				var $obj = document.getElementById('player');
+                $obj.parentNode.removeChild($obj);
+            }
+
 			function adjustSize()
 			{
 				var $obj = document.getElementById('player');
@@ -458,11 +464,13 @@ KSwfPlayer::KSwfPlayer(QWidget* parent)
 		settings()->setAttribute(QWebSettings::PluginsEnabled, true);
 		settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
 		settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
+		settings()->setAttribute(QWebSettings::AcceleratedCompositingEnabled, false);
 	}
 }
 
 KSwfPlayer::~KSwfPlayer()
 {
+    CleanupFlash();
 	if (m_pSwfInfo)
 	{
 		delete m_pSwfInfo;
@@ -597,19 +605,29 @@ void KSwfPlayer::showEvent(QShowEvent *event)
 
 void KSwfPlayer::hideEvent(QHideEvent *event)
 {
+    CleanupFlash();
 	QWebView::hideEvent(event);
 }
 
 void KSwfPlayer::closeEvent(QCloseEvent *event)
 {
-	if (m_bLoaded)
+    CleanupFlash();
+	QWebView::closeEvent(event);
+}
+
+void KSwfPlayer::CleanupFlash()
+{
+    if (m_bLoaded)
 	{
+#if _DEBUG
+        qDebug() << __func__ << ": unload and cleanup";
+#endif
 		if (m_eSwfPlayerState == KSwfPlayer::Playing)
 			this->Stop();
+        this->Eval("unload()");
 		this->settings()->clearMemoryCaches();
+        m_bLoaded = false;
 	}
-
-	QWebView::closeEvent(event);
 }
 
 void KSwfPlayer::EnableDebug(bool bEnableDebug)
