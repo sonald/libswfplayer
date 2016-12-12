@@ -55,5 +55,7 @@ private:
 	bool m_bEnableDebug;
 };
 
+extern "C" KSwfPlayer* new_player();
+
 #endif /* ifndef __SWF_PLAYER_H_ */
 

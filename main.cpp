@@ -7,22 +7,45 @@ static int width = 700, height = 500;
 //default testing file
 const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragandpop.swf";
 
-static KSwfPlayer *w;
+static KSwfPlayer *w = NULL;
 static QString file;
+
+using NewPlayer = KSwfPlayer* (*)();
 
 class MainWindow: public QTabWidget {
     Q_OBJECT
     public:
+        virtual ~MainWindow() {
+            qDebug() << __func__;
+            delete w;
+            if (!_lib->unload()) {
+                qDebug() << _lib->errorString();
+            }
+            delete _lib;
+        }
+
         MainWindow(): QTabWidget(0) {
+            _lib = new QLibrary("libswfplayer.so");
+            if (_lib->load()) {
+                NewPlayer fn = (NewPlayer)_lib->resolve("new_player");
+                if (fn) {
+                    w = fn();
+                    w->setParent(this);
+                    if (w->CheckPlugins()) {
+                        w->LoadSwf(file);
+                    }
+                } else {
+                    qDebug() << _lib->errorString();
+                }
+            } else {
+                qDebug() << _lib->errorString();
+            }
+
             auto *tab1 = new QWidget;
             {
                 auto *layout = new QVBoxLayout(tab1);
                 //layout->addStretch();
 
-                w = new KSwfPlayer(this);
-                if (w->CheckPlugins()) {
-                    w->LoadSwf(file);
-                }
                 layout->addWidget(w);
 
                 auto *hbox = new QHBoxLayout;
@@ -96,6 +119,7 @@ class MainWindow: public QTabWidget {
 
     private:
         QLabel *_lb;
+        QLibrary *_lib;
 };
 
 int main(int argc, char *argv[])

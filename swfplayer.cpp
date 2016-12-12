@@ -742,3 +742,10 @@ bool KSwfPlayer::CheckPlugins()
 
 	return false;
 }
+
+
+extern "C" KSwfPlayer* new_player()
+{
+    return new KSwfPlayer;
+}
+
