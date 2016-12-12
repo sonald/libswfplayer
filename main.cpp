@@ -25,6 +25,21 @@ class MainWindow: public QTabWidget {
         }
 
         MainWindow(): QTabWidget(0) {
+#if DEBUG_TEST
+            _lib = new QLibrary("libswfplayer.so");
+            if (_lib->load()) {
+                NewPlayer fn = (NewPlayer)_lib->resolve("new_player");
+                w = fn();
+                if (w->CheckPlugins()) {
+                    w->LoadSwf(file);
+                }
+                delete w;
+
+                _lib->unload();
+                delete _lib;
+            }
+#endif
+
             _lib = new QLibrary("libswfplayer.so");
             if (_lib->load()) {
                 NewPlayer fn = (NewPlayer)_lib->resolve("new_player");
