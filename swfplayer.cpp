@@ -41,7 +41,9 @@ typedef struct SwfTag
 class KSwfFileInfo : public QObject
 {
 public:
-	QString strFileName;
+	KSwfFileInfo();
+public:
+	QString m_strFileName;
 	char m_szSig[4];
 	int m_nVersion;
 	int m_nLength;
@@ -121,11 +123,11 @@ static const char s_szPlayerScript[] = R"(
 				document.getElementById('player').Rewind();
 			}
 
-            function unload()
-            {
+			function unload()
+			{
 				var $obj = document.getElementById('player');
-                $obj.parentNode.removeChild($obj);
-            }
+				$obj.parentNode.removeChild($obj);
+			}
 
 			function adjustSize()
 			{
@@ -206,7 +208,7 @@ static int execWithTimeout(const QStringList& cmdList, int timeout)
 
 static QImage getThumbnailByGnash(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
-	if (!QFile::exists("/usr/bin/dump-gnash"))
+	if (!pSwfFileInfo && !QFile::exists("/usr/bin/dump-gnash"))
 		return QImage();
 
 	QTemporaryFile tmpFile;
@@ -244,7 +246,7 @@ static QImage getThumbnailByGnash(KSwfFileInfo* pSwfFileInfo, const QString& str
 
 static QImage getThumbnailByFfmpeg(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
-	if (!QFile::exists("/usr/bin/ffmpegthumbnailer"))
+	if (!pSwfFileInfo && !QFile::exists("/usr/bin/ffmpegthumbnailer"))
 		return QImage();
 
 	QTemporaryFile tmpFile;
@@ -279,6 +281,9 @@ static QImage getThumbnailByFfmpeg(KSwfFileInfo* pSwfFileInfo, const QString& st
 static QImage getThumbnailFromSwf(KSwfFileInfo* pSwfFileInfo, const QString& strFile)
 {
 	QImage Img;
+
+	if (!pSwfFileInfo)
+		return Img;
 
 	if (pSwfFileInfo->m_bContainsImage || pSwfFileInfo->m_bContainsVideo)
 	{
@@ -327,6 +332,23 @@ static void parseTags(KSwfFileInfo& swfFileInfo, const unsigned char *buf, const
 	}
 }
 
+KSwfFileInfo::KSwfFileInfo()
+	: m_strFileName("")
+	, m_nVersion(0)
+	, m_nLength(0)
+	, m_bComPressed(false)
+	, m_nWidth(0)
+	, m_nHeight(0)
+	, m_nFrameRate(0)
+	, m_nFrameCount(0)
+	, m_bValid(false)
+	, m_ImgThumb(QImage())
+	, m_bContainsVideo(false)
+	, m_bContainsImage(false)
+{
+	memset(m_szSig, 0, sizeof(m_szSig));
+}
+
 KSwfFileInfo* KSwfFileInfo::ParseSwfFile(const QString& strFile)
 {
 	KSwfFileInfo *pSwfFileInfo = new KSwfFileInfo;
@@ -334,7 +356,7 @@ KSwfFileInfo* KSwfFileInfo::ParseSwfFile(const QString& strFile)
 		return NULL;
 
 	pSwfFileInfo->m_bValid = false;
-	pSwfFileInfo->strFileName = strFile;
+	pSwfFileInfo->m_strFileName = strFile;
 
 	QFile file(strFile);
 	if (!file.open(QIODevice::ReadOnly))
@@ -453,24 +475,17 @@ KSwfFileInfo* KSwfFileInfo::ParseSwfFile(const QString& strFile)
 }
 
 KSwfPlayer::KSwfPlayer(QWidget* parent)
-	: QWebView(parent),
-	m_bLoaded(false),
-	m_eSwfPlayerState(KSwfPlayer::Invalid),
-	m_pSwfInfo(NULL),
-	m_bEnableDebug(false)
+	: QWebView(parent)
+	, m_bLoaded(false)
+	, m_eSwfPlayerState(KSwfPlayer::Invalid)
+	, m_pSwfInfo(NULL)
+	, m_bEnableDebug(false)
 {
-	if (settings())
-	{
-		settings()->setAttribute(QWebSettings::PluginsEnabled, true);
-		settings()->setAttribute(QWebSettings::JavascriptEnabled, true);
-		settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
-		settings()->setAttribute(QWebSettings::AcceleratedCompositingEnabled, false);
-	}
 }
 
 KSwfPlayer::~KSwfPlayer()
 {
-    CleanupFlash();
+	CleanupFlash();
 	if (m_pSwfInfo)
 	{
 		delete m_pSwfInfo;
@@ -532,7 +547,7 @@ void KSwfPlayer::resizeEvent(QResizeEvent *event)
 
 QImage KSwfPlayer::ThumbNail() const
 {
-	if (m_eSwfPlayerState != KSwfPlayer::Invalid)
+	if (m_pSwfInfo && m_eSwfPlayerState != KSwfPlayer::Invalid)
 		return m_pSwfInfo->m_ImgThumb;
 
 	QImage ImgBlank(m_SizePrefered, QImage::Format_RGB888);
@@ -573,11 +588,8 @@ void KSwfPlayer::LoadSwf(QString& strFileName)
 	m_bLoaded = false;
 	m_eSwfPlayerState = KSwfPlayer::Invalid;
 
-	QFileInfo fileInfo(strFileName);
-	QString strFile = QString("file://") + fileInfo.canonicalFilePath();
-
 	m_pSwfInfo = KSwfFileInfo::ParseSwfFile(strFileName);
-	if (m_pSwfInfo->m_bValid)
+	if (m_pSwfInfo && m_pSwfInfo->m_bValid)
 	{
 		m_eSwfPlayerState = KSwfPlayer::Loaded;
 		m_SizePrefered = QSize(m_pSwfInfo->m_nWidth, m_pSwfInfo->m_nHeight);
@@ -588,9 +600,19 @@ void KSwfPlayer::showEvent(QShowEvent *event)
 {
 	if (m_bEnableDebug)
 		qDebug() << __func__;
-	if (!m_bLoaded && m_eSwfPlayerState == KSwfPlayer::Loaded)
+
+	QWebSettings* pWebSet = settings();
+	if (pWebSet)
 	{
-		QFileInfo fileInfo(m_pSwfInfo->strFileName);
+		pWebSet->setAttribute(QWebSettings::PluginsEnabled, true);
+		pWebSet->setAttribute(QWebSettings::JavascriptEnabled, true);
+		pWebSet->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
+		pWebSet->setAttribute(QWebSettings::AcceleratedCompositingEnabled, false);
+	}
+
+	if (m_pSwfInfo && !m_bLoaded && m_eSwfPlayerState == KSwfPlayer::Loaded)
+	{
+		QFileInfo fileInfo(m_pSwfInfo->m_strFileName);
 		QString strFile = QString("file://") + fileInfo.canonicalFilePath();
 
 		QString strTmpBuf(s_szPlayerScript);
@@ -605,28 +627,28 @@ void KSwfPlayer::showEvent(QShowEvent *event)
 
 void KSwfPlayer::hideEvent(QHideEvent *event)
 {
-    CleanupFlash();
+	CleanupFlash();
 	QWebView::hideEvent(event);
 }
 
 void KSwfPlayer::closeEvent(QCloseEvent *event)
 {
-    CleanupFlash();
+	CleanupFlash();
 	QWebView::closeEvent(event);
 }
 
 void KSwfPlayer::CleanupFlash()
 {
-    if (m_bLoaded)
+	if (m_bLoaded)
 	{
 #if _DEBUG
-        qDebug() << __func__ << ": unload and cleanup";
+		qDebug() << __func__ << ": unload and cleanup";
 #endif
 		if (m_eSwfPlayerState == KSwfPlayer::Playing)
 			this->Stop();
-        this->Eval("unload()");
-		this->settings()->clearMemoryCaches();
-        m_bLoaded = false;
+		this->Eval("unload()");
+			this->settings()->clearMemoryCaches();
+		m_bLoaded = false;
 	}
 }
 

@@ -6,7 +6,7 @@
 #include <QWebView>
 
 class KSwfFileInfo;
-class KSwfPlayer: public QWebView
+class KSwfPlayer : public QWebView
 {
 	Q_OBJECT
 public:
@@ -45,7 +45,7 @@ protected:
 
 private:
 	QVariant Eval(const QString& script);
-    void CleanupFlash();
+	void CleanupFlash();
 
 private:
 	bool		m_bLoaded;
