@@ -10,7 +10,15 @@ const char swffile[] = "file:///home/sonald/Dropbox/stage/deepin/jinshan/dragand
 static KSwfPlayer *w = NULL;
 static QString file;
 
-using NewPlayer = KSwfPlayer* (*)();
+using NewPlayer = KSwfPlayer* (*)(QWidget*);
+using FnCheckPlugins = bool (*)(KSwfPlayer*);
+using FnLoadSwf = void (*)(KSwfPlayer*, QString*);
+using FnSizePrefered = void (*) (KSwfPlayer*, QSize*);
+using FnEnableDebug = void (*) (KSwfPlayer*, bool bEnableDebug);
+using FnAction = void (*)(KSwfPlayer*);
+using FnGetSwfPlayerState = KSwfPlayer::SwfPlayState (*) (KSwfPlayer* obj);
+//void Grab(void*, QString strFilePath);
+using FnThumbNail = void (*) (KSwfPlayer* obj, QImage* pImg);
 
 class MainWindow: public QTabWidget {
     Q_OBJECT
@@ -25,29 +33,16 @@ class MainWindow: public QTabWidget {
         }
 
         MainWindow(): QTabWidget(0) {
-#if DEBUG_TEST
             _lib = new QLibrary("libswfplayer.so");
             if (_lib->load()) {
-                NewPlayer fn = (NewPlayer)_lib->resolve("new_player");
-                w = fn();
-                if (w->CheckPlugins()) {
-                    w->LoadSwf(file);
-                }
-                delete w;
+                NewPlayer fn = (NewPlayer)_lib->resolve("CreateKSwfPlayer");
+                FnCheckPlugins fn2 = (FnCheckPlugins)_lib->resolve("CheckPlugins");
+                FnLoadSwf fn3 = (FnLoadSwf)_lib->resolve("LoadSwf");
 
-                _lib->unload();
-                delete _lib;
-            }
-#endif
-
-            _lib = new QLibrary("libswfplayer.so");
-            if (_lib->load()) {
-                NewPlayer fn = (NewPlayer)_lib->resolve("new_player");
                 if (fn) {
-                    w = fn();
-                    w->setParent(this);
-                    if (w->CheckPlugins()) {
-                        w->LoadSwf(file);
+                    w = fn(this);
+                    if (fn2(w)) {
+                        fn3(w, &file);
                     }
                 } else {
                     qDebug() << _lib->errorString();
@@ -86,17 +81,17 @@ class MainWindow: public QTabWidget {
                 QString txt = QString::fromStdString("Play");
                 pbPlay->setText("Play");
                 hbox->addWidget(pbPlay);
-                QObject::connect(pbPlay, SIGNAL(pressed()), w, SLOT(Play()));
+                QObject::connect(pbPlay, SIGNAL(pressed()), this, SLOT(Play()));
 
                 auto *pbStop = new QPushButton(tab1);
                 pbStop->setText("Stop");
                 hbox->addWidget(pbStop);
-                QObject::connect(pbStop, SIGNAL(pressed()), w, SLOT(Stop()));
+                QObject::connect(pbStop, SIGNAL(pressed()), this, SLOT(Stop()));
 
                 auto *pbPause = new QPushButton(tab1);
                 pbPause->setText("Pause");
                 hbox->addWidget(pbPause);
-                QObject::connect(pbPause, SIGNAL(pressed()), w, SLOT(Pause()));
+                QObject::connect(pbPause, SIGNAL(pressed()), this, SLOT(Pause()));
 
 
                 auto *pbDebug = new QPushButton(tab1);
@@ -115,7 +110,7 @@ class MainWindow: public QTabWidget {
 
             auto *layout = new QVBoxLayout(tab2);
             _lb = new QLabel;
-            _lb->setPixmap(QPixmap::fromImage(w->ThumbNail()));
+            //_lb->setPixmap(QPixmap::fromImage(w->ThumbNail()));
             layout->addWidget(_lb);
             layout->addWidget(pb);
             tab2->setLayout(layout);
@@ -123,12 +118,20 @@ class MainWindow: public QTabWidget {
             this->addTab(tab2, "Page2");
         }
 
+        QSize SizePrefered() {
+            QSize sz;
+            FnSizePrefered fn = (FnSizePrefered)_lib->resolve("SizePrefered");
+            fn(w, &sz);
+            return sz;
+        }
+
         public slots:
             void toggleDebug() {
                 static bool on = false;
                 
                 on = !on;
-                w->EnableDebug(on);
+                FnEnableDebug fn = (FnEnableDebug)_lib->resolve("EnableDebug");
+                fn(w, on);
             }
 
             void OnCurrenChanged(int index) {
@@ -136,11 +139,33 @@ class MainWindow: public QTabWidget {
                 if (index == 0) {
                     w->show();
                 } else {
-                    //if (w->state() == KSwfPlayer::Loaded)
-                        //_lb->setPixmap(QPixmap::fromImage(w->ThumbNail()));
+                    auto fn = (FnGetSwfPlayerState)_lib->resolve("GetSwfPlayerState");
+                    KSwfPlayer::SwfPlayState state = fn(w);
+                    if (state == KSwfPlayer::Loaded) {
+                        QImage thumb;
+                        auto fn = (FnThumbNail)_lib->resolve("ThumbNail");
+                        fn(w, &thumb);
+                        _lb->setPixmap(QPixmap::fromImage(thumb));
+                    }
                     w->hide();
                 }
             }
+
+            void Play() {
+                FnAction fn = (FnAction)_lib->resolve("Play");
+                fn(w);
+            }
+
+            void Stop() {
+                FnAction fn = (FnAction)_lib->resolve("Stop");
+                fn(w);
+            }
+
+            void Pause() {
+                FnAction fn = (FnAction)_lib->resolve("Pause");
+                fn(w);
+            }
+
 
     protected:
         void closeEvent(QCloseEvent *ce) {
@@ -195,7 +220,7 @@ int main(int argc, char *argv[])
     w2->setAttribute(Qt::WA_QuitOnClose, true);
     QObject::connect(w2, SIGNAL(currentChanged(int)), w2, SLOT(OnCurrenChanged(int)));
 
-    width = w->SizePrefered().width(), height = w->SizePrefered().height();
+    width = w2->SizePrefered().width(), height = w2->SizePrefered().height();
     w2->resize(width + 80, height + 100);
     w2->show();
 

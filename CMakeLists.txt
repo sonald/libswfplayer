@@ -18,7 +18,7 @@ target_link_libraries(swfplayer Qt4::QtGui Qt4::QtWebKit z)
 
 add_executable(qswfplayer main.cpp)
 link_directories(qswfplayer ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(qswfplayer Qt4::QtGui Qt4::QtWebKit swfplayer)
+target_link_libraries(qswfplayer Qt4::QtGui Qt4::QtWebKit)
 
 add_dependencies(qswfplayer swfplayer)
 

@@ -57,7 +57,20 @@ private:
 	bool m_bEnableDebug;
 };
 
-extern "C" KSwfPlayer* new_player();
+extern "C" {
+Q_DECL_EXPORT KSwfPlayer* CreateKSwfPlayer(QWidget* parent);
+Q_DECL_EXPORT void DestroyKSwfPlayer(KSwfPlayer*);
+Q_DECL_EXPORT bool CheckPlugins(KSwfPlayer*);
+Q_DECL_EXPORT void LoadSwf(KSwfPlayer*, QString* pStrFileName);
+Q_DECL_EXPORT void SizePrefered(KSwfPlayer*, QSize*);
+Q_DECL_EXPORT KSwfPlayer::SwfPlayState GetSwfPlayerState(KSwfPlayer*);
+Q_DECL_EXPORT void EnableDebug(KSwfPlayer*, bool bEnableDebug);
+Q_DECL_EXPORT void Play(KSwfPlayer*);
+Q_DECL_EXPORT void Stop(KSwfPlayer*);
+Q_DECL_EXPORT void Pause(KSwfPlayer*);
+Q_DECL_EXPORT void Grab(KSwfPlayer*, QString strFilePath);
+Q_DECL_EXPORT void ThumbNail(KSwfPlayer*, QImage*);
+}
 
 #endif /* ifndef __SWF_PLAYER_H_ */
 

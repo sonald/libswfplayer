@@ -778,9 +778,72 @@ bool KSwfPlayer::CheckPlugins()
 	return false;
 }
 
-
-extern "C" KSwfPlayer* new_player()
+extern "C" {
+Q_DECL_EXPORT KSwfPlayer* CreateKSwfPlayer(QWidget* parent)
 {
-    return new KSwfPlayer;
+    return new KSwfPlayer(parent);
+}
+
+Q_DECL_EXPORT void DestroyKSwfPlayer(KSwfPlayer* obj)
+{
+    delete obj;
+}
+
+Q_DECL_EXPORT bool CheckPlugins(KSwfPlayer* obj)
+{
+    return obj->CheckPlugins();
+}
+
+Q_DECL_EXPORT void LoadSwf(KSwfPlayer* obj, QString* pStrFileName)
+{
+    obj->LoadSwf(*pStrFileName);
+}
+
+Q_DECL_EXPORT KSwfPlayer::SwfPlayState GetSwfPlayerState(KSwfPlayer* obj)
+{
+    return obj->GetSwfPlayerState();
+}
+
+Q_DECL_EXPORT void EnableDebug(KSwfPlayer* obj, bool bEnableDebug)
+{
+    obj->EnableDebug(bEnableDebug);
+}
+
+Q_DECL_EXPORT void Play(KSwfPlayer* obj)
+{
+    obj->Play();
+}
+
+Q_DECL_EXPORT void Stop(KSwfPlayer* obj)
+{
+    obj->Stop();
+}
+
+Q_DECL_EXPORT void Pause(KSwfPlayer* obj)
+{
+    obj->Pause();
+}
+
+Q_DECL_EXPORT void Grab(KSwfPlayer* obj, QString strFilePath)
+{
+    obj->Grab(strFilePath);
+}
+
+Q_DECL_EXPORT void SizePrefered(KSwfPlayer* obj, QSize *pSz)
+{
+    if (pSz) 
+    {
+        *pSz = obj->SizePrefered();
+    }
+}
+
+Q_DECL_EXPORT void ThumbNail(KSwfPlayer* obj, QImage* pImg)
+{
+    if (pImg)
+    {
+        *pImg = obj->ThumbNail();
+    }
+}
+
 }
 
