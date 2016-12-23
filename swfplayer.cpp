@@ -667,6 +667,18 @@ void KSwfPlayer::contextMenuEvent(QContextMenuEvent * event)
 		QWebView::contextMenuEvent(event);
 }
 
+void KSwfPlayer::keyPressEvent(QKeyEvent *event)
+{
+    QWebView::keyPressEvent(event);
+    event->ignore();
+}
+
+void KSwfPlayer::mousePressEvent(QMouseEvent *event)
+{
+    QWebView::mousePressEvent(event);
+    event->ignore();
+}
+
 bool KSwfPlayer::CheckPlugins()
 {
 	QByteArray chklist[] =

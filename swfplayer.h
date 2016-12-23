@@ -42,6 +42,8 @@ protected:
 	void hideEvent(QHideEvent *event);
 	void closeEvent(QCloseEvent *event);
 	void contextMenuEvent(QContextMenuEvent * event);
+	void keyPressEvent(QKeyEvent *event);
+	void mousePressEvent(QMouseEvent *event);
 
 private:
 	QVariant Eval(const QString& script);

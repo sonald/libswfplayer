@@ -132,6 +132,18 @@ class MainWindow: public QTabWidget {
             qApp->quit();
         }
 
+        void keyPressEvent(QKeyEvent *event)
+        {
+            qDebug() << "main " << __func__;
+            QTabWidget::keyPressEvent(event);
+        }
+
+        void mousePressEvent(QMouseEvent *event)
+        {
+            qDebug() << "main " << __func__;
+            QTabWidget::mousePressEvent(event);
+        }
+
     private:
         QLabel *_lb;
         QLibrary *_lib;
