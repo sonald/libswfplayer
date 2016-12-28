@@ -56,6 +56,22 @@ class MainWindow: public QTabWidget {
                 qDebug() << _lib->errorString();
             }
 
+            {
+                _bar = new QWidget(NULL);
+                _bar->setWindowFlags(Qt::X11BypassWindowManagerHint|Qt::WindowStaysOnTopHint|Qt::CustomizeWindowHint);
+                _bar->resize(600, 40);
+                auto *layout = new QHBoxLayout(_bar);
+
+                const char* names[] = {"play", "pause", "stop"};
+                for (int i = 0; i < 3; i++) {
+                    auto *btn = new QPushButton(names[i]);
+                    layout->addWidget(btn);
+                }
+
+                _bar->setLayout(layout);
+                _bar->setVisible(false);
+            }
+
             auto *tab1 = new QWidget;
             {
                 auto *layout = new QVBoxLayout(tab1);
@@ -135,6 +151,21 @@ class MainWindow: public QTabWidget {
         void keyPressEvent(QKeyEvent *event)
         {
             qDebug() << "main " << __func__;
+            if (event->key() == Qt::Key_F5) {
+                if (isFullScreen()) 
+                    showNormal();
+                else {
+                    showFullScreen();
+                }
+                _bar->setVisible(isFullScreen());
+                _bar->move(400, 800);
+
+            } else if (event->key() == Qt::Key_F6) {
+                if (isFullScreen()) {
+                    _bar->setVisible(!_bar->isVisible());
+                }
+            }
+
             QTabWidget::keyPressEvent(event);
         }
 
@@ -147,6 +178,7 @@ class MainWindow: public QTabWidget {
     private:
         QLabel *_lb;
         QLibrary *_lib;
+        QWidget *_bar; // control bar
 };
 
 int main(int argc, char *argv[])
