@@ -481,6 +481,7 @@ KSwfPlayer::KSwfPlayer(QWidget* parent)
 	, m_pSwfInfo(NULL)
 	, m_bEnableDebug(false)
 {
+    setFocusPolicy(Qt::NoFocus);
 }
 
 KSwfPlayer::~KSwfPlayer()
