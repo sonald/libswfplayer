@@ -33,6 +33,26 @@ class MainWindow: public QTabWidget {
         }
 
         MainWindow(): QTabWidget(0) {
+            {
+                _lib = new QLibrary("libswfplayer.so");
+                if (_lib->load()) {
+                    NewPlayer fn = (NewPlayer)_lib->resolve("CreateKSwfPlayer");
+                    FnCheckPlugins fn2 = (FnCheckPlugins)_lib->resolve("CheckPlugins");
+                    FnLoadSwf fn3 = (FnLoadSwf)_lib->resolve("LoadSwf");
+
+                    if (fn) {
+                        w = fn(this);
+                        if (fn2(w)) {
+                            fn3(w, &file);
+                        }
+                    }
+                }
+
+                delete w;
+                _lib->unload();
+                delete _lib;
+            }
+
             _lib = new QLibrary("libswfplayer.so");
             if (_lib->load()) {
                 NewPlayer fn = (NewPlayer)_lib->resolve("CreateKSwfPlayer");
@@ -231,4 +251,4 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-#include "main.moc"
+#include "moc_main.cxx"
